@@ -1,22 +1,50 @@
-<video id="cam" autoplay></video> <canvas id="frame"></canvas>
-<button onclik="ambilFrame("cam", "frame");'> take photo</button>
-<script> 
-  mulaiKamera();
-  
+<video id="cam" autoplay playsinline></video>
+<canvas id="frame" style="display:none;"></canvas>
+<br>
+<button onclick="ambilFoto()">Ambil Foto & Hitung Kecerahan</button>
+<p id="hasil">Rata-rata kecerahan: -</p>
+
+<script>
+// Mulai kamera otomatis saat halaman dimuat
+mulaiKamera();
+
 async function mulaiKamera() {
-    const video = document.getElementById('cam');
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-    video.srcObject = stream;
-    await video.play();
-    return video;
+    try {
+        const video = document.getElementById('cam');
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        video.srcObject = stream;
+        await video.play();
+    } catch (error) {
+        console.error("Gagal mengakses kamera:", error);
+        alert("Tidak dapat mengakses kamera. Pastikan izin kamera diberikan.");
+    }
 }
 
-function ambilFrame(video, canvas) {
+function ambilFoto() {
+    const video = document.getElementById('cam');
+    const canvas = document.getElementById('frame');
+    
+    // Pastikan video sudah siap
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+        alert("Kamera belum siap!");
+        return;
+    }
+
     const ctx = canvas.getContext('2d');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
-    ctx.drawImage(video, 0, 0);
-    return ctx.getImageData(0, 0, canvas.width, canvas.height);
+    
+    // Salin gambar dari video ke canvas
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    // Ambil data piksel
+    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    
+    // Hitung rata-rata kecerahan
+    const kecerahan = rataKecerahan(imageData);
+    
+    // Tampilkan hasil ke layar
+    document.getElementById('hasil').innerText = `Rata-rata kecerahan: ${kecerahan.toFixed(2)}`;
 }
 
 // Hitung rata-rata kecerahan
@@ -24,8 +52,9 @@ function rataKecerahan(imageData) {
     const d = imageData.data;
     let total = 0;
     for (let i = 0; i < d.length; i += 4) {
-        total += (d[i] + d[i + 1] + d[i + 2]) / 3;
+        // Menggunakan rumus luminans standar (lebih akurat untuk mata manusia) atau rata-rata sederhana
+        total += (d[i] * 0.299 + d[i + 1] * 0.587 + d[i + 2] * 0.114);
     }
     return total / (d.length / 4);
 }
-  </script>
+</script>
