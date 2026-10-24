@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Haar Cascade & Bokeh Blur Pipeline - OpenCV.js</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0f9ff',
+                            500: '#06b6d4',
+                            600: '#0891b2',
+                            700: '#0e7490',
+                            900: '#164e63',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%);
+            min-height: 100vh;
+            color: #f8fafc;
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        }
+        .glass-panel {
+            background: rgba(15, 23, 42, 0.65);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .glass-card {
+            background: rgba(30, 41, 59, 0.5);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        /* Custom Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.4);
+        }
+    </style>
+</head>
+<body class="p-4 md:p-6 text-slate-200">
+    <!-- Top Bar Header -->
+    <header class="max-w-7xl mx-auto mb-6 flex flex-col md:flex-row justify-between items-center gap-4 glass-panel p-4 rounded-2xl shadow-2xl">
+        <div class="flex items-center gap-3">
+            <div class="p-3 bg-cyan-500/20 text-cyan-400 rounded-xl border border-cyan-500/30">
+                <i data-lucide="scan-face" class="w-7 h-7"></i>
+            </div>
+            <div>
+                <h1 class="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-cyan-400 via-teal-300 to-indigo-400">
+                    CV Object Optimizer & Bokeh Filter
+                </h1>
+                <p class="text-xs text-slate-400">OpenCV.js • Haar Cascade • Thresholding • Morphology Pipeline</p>
+            </div>
+        </div>
+
+        <!-- Global Status Badges -->
+        <div class="flex flex-wrap items-center gap-2">
+            <span id="cv-status" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin"></i> Loading OpenCV.js...
+            </span>
+            <span id="cascade-status" class="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-slate-800 text-slate-400 border border-slate-700">
+                <i data-lucide="file-code" class="w-3.5 h-3.5"></i> Cascade: Waiting
+            </span>
+            <span id="fps-badge" class="hidden md:flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-mono font-bold bg-slate-900 text-cyan-400 border border-slate-700">
+                0 FPS
+            </span>
+        </div>
+    </header>
+
+    <main class="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+        <!-- Left Column: Video Preview Viewport -->
+        <section class="lg:col-span-7 flex flex-col gap-4">
+            <div class="glass-panel p-4 rounded-2xl shadow-xl flex flex-col items-center justify-center relative min-h-[360px] md:min-h-[460px] overflow-hidden">
+                <!-- Video Source (Hidden element used for capturing frames) -->
+                <video id="video-input" class="hidden" playsinline></video>
+
+                <!-- Processing Output Canvas -->
+                <canvas id="canvas-output" class="w-full h-auto rounded-xl shadow-inner border border-slate-800 bg-slate-950/80 max-h-[520px] object-contain"></canvas>
+
+                <!-- Initial Overlay Placeholder -->
+                <div id="camera-placeholder" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-950/90 rounded-xl z-10 p-6 text-center">
+                    <div class="p-4 bg-slate-900 text-slate-500 rounded-full mb-4 border border-slate-800">
+                        <i data-lucide="camera-off" class="w-10 h-10"></i>
+                    </div>
+                    <h2 class="text-lg font-semibold text-slate-200">Kamera Belum Aktif</h2>
+                    <p class="text-xs text-slate-400 max-w-sm mt-1 mb-6">
+                        Muat OpenCV.js & Model Cascade terlebih dahulu, lalu tekan tombol "Mulai Kamera" untuk memulai pengolahan citra real-time.
+                    </p>
+                    <button id="btn-toggle-cam" disabled class="px-5 py-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:bg-slate-800 disabled:text-slate-600 disabled:cursor-not-allowed text-white font-medium text-sm rounded-xl transition-all shadow-lg shadow-cyan-900/30 flex items-center gap-2">
+                        <i data-lucide="video" class="w-4 h-4"></i> Mulai Kamera
+                    </button>
+                </div>
+
+                <!-- Detection Overlay Info Badge -->
+                <div id="detection-badge" class="absolute top-7 left-7 px-3 py-1.5 rounded-lg glass-card text-xs font-semibold text-slate-300 hidden items-center gap-2 border border-slate-700/50">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span id="detection-text">Mencari Wajah...</span>
+                </div>
+            </div>
+
+            <!-- Visual Pipeline Mode Selector -->
+            <div class="glass-panel p-4 rounded-2xl shadow-lg">
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-1.5">
+                    <i data-lucide="layers" class="w-4 h-4 text-cyan-400"></i> Mode Visualisasi Pipeline
+                </label>
+                <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                    <button data-view="final" class="view-btn active px-3 py-2 text-xs font-medium rounded-xl border border-cyan-500/50 bg-cyan-500/20 text-cyan-300 transition-all text-center">
+                        Bokeh Output (Akhir)
+                    </button>
+                    <button data-view="raw" class="view-btn px-3 py-2 text-xs font-medium rounded-xl border border-slate-700/60 bg-slate-800/40 text-slate-400 hover:bg-slate-800 transition-all text-center">
+                        Raw Video
+                    </button>
+                    <button data-view="threshold" class="view-btn px-3 py-2 text-xs font-medium rounded-xl border border-slate-700/60 bg-slate-800/40 text-slate-400 hover:bg-slate-800 transition-all text-center">
+                        Threshold / Mask
+                    </button>
+                    <button data-view="morphology" class="view-btn px-3 py-2 text-xs font-medium rounded-xl border border-slate-700/60 bg-slate-800/40 text-slate-400 hover:bg-slate-800 transition-all text-center">
+                        Hasil Morfologi
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Right Column: Control Dashboard -->
+        <section class="lg:col-span-5 flex flex-col gap-4">
+            <div class="glass-panel p-5 rounded-2xl shadow-xl flex flex-col gap-5">
+                <div class="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <h2 class="font-bold text-base text-slate-100 flex items-center gap-2">
+                        <i data-lucide="sliders" class="w-5 h-5 text-cyan-400"></i> Kontrol Parameters & Filter
+                    </h2>
+                    <button id="btn-reset-params" class="text-xs text-cyan-400 hover:text-cyan-300 underline">Reset Default</button>
+                </div>
+
+                <!-- Toggle Bokeh Filter -->
+                <div class="glass-card p-3.5 rounded-xl border border-slate-700/40 flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-semibold text-slate-200">Filter Bokeh (Background Blur)</div>
+                        <div class="text-xs text-slate-400">Memisahkan & memfokuskan objek utama</div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="toggle-bokeh" class="sr-only peer" checked>
+                        <div class="w-11 h-6 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-cyan-500"></div>
+                    </label>
+                </div>
+
+                <!-- Bokeh Blur Intensity Slider -->
+                <div class="space-y-2">
+                    <div class="flex justify-between items-center text-xs">
+                        <label for="slider-blur" class="font-semibold text-slate-300 flex items-center gap-1.5">
+                            <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-400"></i> Intensitas Blur Bokeh
+                        </label>
+                        <span id="val-blur" class="font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800/50">25 px</span>
+                    </div>
+                    <input type="range" id="slider-blur" min="3" max="51" step="2" value="25" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+                    <p class="text-[11px] text-slate-500">Nilai Kernel Gaussian Blur untuk meredupkan latar belakang.</p>
+                </div>
+
+                <!-- Pre-Processing Adaptive Threshold Controls -->
+                <div class="pt-3 border-t border-slate-800/80 space-y-3">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <i data-lucide="binary" class="w-4 h-4 text-emerald-400"></i> Optimasi Adaptive Thresholding
+                    </h3>
+
+                    <!-- Block Size Slider -->
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between items-center text-xs">
+                            <label for="slider-blocksize" class="text-slate-300">Block Size Threshold</label>
+                            <span id="val-blocksize" class="font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">11</span>
+                        </div>
+                        <input type="range" id="slider-blocksize" min="3" max="31" step="2" value="11" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-400">
+                    </div>
+
+                    <!-- Constant C Slider -->
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between items-center text-xs">
+                            <label for="slider-c" class="text-slate-300">Konstanta C</label>
+                            <span id="val-c" class="font-mono text-emerald-400 bg-emerald-950/60 px-2 py-0.5 rounded border border-emerald-800/50">2</span>
+                        </div>
+                        <input type="range" id="slider-c" min="0" max="15" step="1" value="2" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-400">
+                    </div>
+                </div>
+
+                <!-- Morphological Filter Controls -->
+                <div class="pt-3 border-t border-slate-800/80 space-y-3">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                        <i data-lucide="boxes" class="w-4 h-4 text-indigo-400"></i> Filter Morfologi Citra
+                    </h3>
+
+                    <!-- Morphology Kernel Size -->
+                    <div class="space-y-1.5">
+                        <div class="flex justify-between items-center text-xs">
+                            <label for="slider-morph-kernel" class="text-slate-300">Ukuran Kernel Morfologi</label>
+                            <span id="val-morph-kernel" class="font-mono text-indigo-400 bg-indigo-950/60 px-2 py-0.5 rounded border border-indigo-800/50">5x5</span>
+                        </div>
+                        <input type="range" id="slider-morph-kernel" min="1" max="15" step="2" value="5" class="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-400">
+                    </div>
+
+                    <!-- Morph Operation Type Selector -->
+                    <div class="grid grid-cols-2 gap-2 text-xs pt-1">
+                        <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-900/60 border border-slate-800 cursor-pointer">
+                            <input type="radio" name="morph-op" value="OPEN" checked class="accent-indigo-400">
+                            <span>Opening (Remove Noise)</span>
+                        </label>
+                        <label class="flex items-center gap-2 p-2 rounded-lg bg-slate-900/60 border border-slate-800 cursor-pointer">
+                            <input type="radio" name="morph-op" value="CLOSE" class="accent-indigo-400">
+                            <span>Closing (Fill Holes)</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- OpenCV.js Dynamic Load Script -->
+    <script>
+        // Init Lucide Icons
+        lucide.createIcons();
+
+        // State & Configuration Application Variables
+        const APP = {
+            cvLoaded: false,
+            cascadeLoaded: false,
+            isStreaming: false,
+            stream: null,
+            videoEl: document.getElementById('video-input'),
+            canvasEl: document.getElementById('canvas-output'),
+            ctx: document.getElementById('canvas-output').getContext('2d'),
+            classifier: null,
+            xmlFileName: 'haarcascade_frontalface_default.xml',
+            xmlUrl: 'https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml',
+            
+            // Render Config Parameters
+            viewMode: 'final', // 'final', 'raw', 'threshold', 'morphology'
+            bokehEnabled: true,
+            blurKernelSize: 25,
+            thresholdBlockSize: 11,
+            thresholdC: 2,
+            morphKernelSize: 5,
+            morphOp: 'OPEN', // 'OPEN' or 'CLOSE'
+            
+            // Performance Metrics
+            lastFrameTime: performance.now(),
+            fps: 0,
+            frameCount: 0,
+            fpsTimer: performance.now(),
+
+            // OpenCV Persistent Mat Buffer Memory
+            mats: {}
+        };
+
+        // DOM Elements
+        const DOM = {
+            cvStatus: document.getElementById('cv-status'),
+            cascadeStatus: document.getElementById('cascade-status'),
+            btnToggleCam: document.getElementById('btn-toggle-cam'),
+            cameraPlaceholder: document.getElementById('camera-placeholder'),
+            detectionBadge: document.getElementById('detection-badge'),
+            detectionText: document.getElementById('detection-text'),
+            fpsBadge: document.getElementById('fps-badge'),
+            sliderBlur: document.getElementById('slider-blur'),
+            valBlur: document.getElementById('val-blur'),
+            sliderBlocksize: document.getElementById('slider-blocksize'),
+            valBlocksize: document.getElementById('val-blocksize'),
+            sliderC: document.getElementById('slider-c'),
+            valC: document.getElementById('val-c'),
+            sliderMorphKernel: document.getElementById('slider-morph-kernel'),
+            valMorphKernel: document.getElementById('val-morph-kernel'),
+            toggleBokeh: document.getElementById('toggle-bokeh'),
+            btnReset: document.getElementById('btn-reset-params')
+        };
+
+        // Initialize Application Controls & Event Listeners
+        function initEventListeners() {
+            // Camera Start/Stop Button
+            DOM.btnToggleCam.addEventListener('click', toggleCamera);
+
+            // Bokeh Toggle
+            DOM.toggleBokeh.addEventListener('change', (e) => {
+                APP.bokehEnabled = e.target.checked;
+            });
+
+            // Slider Listeners
+            DOM.sliderBlur.addEventListener('input', (e) => {
+                let val = parseInt(e.target.value);
+                if (val % 2 === 0) val += 1; // Must be odd for Gaussian Blur
+                APP.blurKernelSize = val;
+                DOM.valBlur.textContent = `${val} px`;
+            });
+
+            DOM.sliderBlocksize.addEventListener('input', (e) => {
+                let val = parseInt(e.target.value);
+                if (val % 2 === 0) val += 1; // Must be odd for Adaptive Threshold
+                APP.thresholdBlockSize = val;
+                DOM.valBlocksize.textContent = val;
+            });
+
+            DOM.sliderC.addEventListener('input', (e) => {
+                APP.thresholdC = parseInt(e.target.value);
+                DOM.valC.textContent = APP.thresholdC;
+            });
+
+            DOM.sliderMorphKernel.addEventListener('input', (e) => {
+                let val = parseInt(e.target.value);
+                if (val % 2 === 0) val += 1;
+                APP.morphKernelSize = val;
+                DOM.valMorphKernel.textContent = `${val}x${val}`;
+            });
+
+            // Radio Button Listeners for Morphology
+            document.querySelectorAll('input[name="morph-op"]').forEach(radio => {
+                radio.addEventListener('change', (e) => {
+                    APP.morphOp = e.target.value;
+                });
+            });
+
+            // View Mode Pipelines Selector
+            document.querySelectorAll('.view-btn').forEach(btn => {
+                btn.addEventListener('click', (e) => {
+                    document.querySelectorAll('.view-btn').forEach(b => {
+                        b.classList.remove('active', 'border-cyan-500/50', 'bg-cyan-500/20', 'text-cyan-300');
+                        b.classList.add('border-slate-700/60', 'bg-slate-800/40', 'text-slate-400');
+                    });
+                    const target = e.currentTarget;
+                    target.classList.add('active', 'border-cyan-500/50', 'bg-cyan-500/20', 'text-cyan-300');
+                    target.classList.remove('border-slate-700/60', 'bg-slate-800/40', 'text-slate-400');
+                    APP.viewMode = target.dataset.view;
+                });
+            });
+
+            // Reset Parameters
+            DOM.btnReset.addEventListener('click', () => {
+                DOM.sliderBlur.value = 25;
+                APP.blurKernelSize = 25;
+                DOM.valBlur.textContent = '25 px';
+
+                DOM.sliderBlocksize.value = 11;
+                APP.thresholdBlockSize = 11;
+                DOM.valBlocksize.textContent = '11';
+
+                DOM.sliderC.value = 2;
+                APP.thresholdC = 2;
+                DOM.valC.textContent = '2';
+
+                DOM.sliderMorphKernel.value = 5;
+                APP.morphKernelSize = 5;
+                DOM.valMorphKernel.textContent = '5x5';
+
+                DOM.toggleBokeh.checked = true;
+                APP.bokehEnabled = true;
+            });
+        }
+
+        // Async Load Haar Cascade File into OpenCV FS
+        async function loadHaarCascade() {
+            try {
+                DOM.cascadeStatus.innerHTML = `<i data-lucide="loader-2" class="w-3.5 h-3.5 animate-spin text-amber-400"></i> Memuat Cascade XML...`;
+                lucide.createIcons();
+
+                const response = await fetch(APP.xmlUrl);
+                if (!response.ok) throw new Error(`HTTP Error status: ${response.status}`);
+                
+                const buffer = await response.arrayBuffer();
+                const data = new Uint8Array(buffer);
+
+                // Save to OpenCV Virtual File System (FS)
+                cv.FS_createDataFile('/', APP.xmlFileName, data, true, false, false);
+
+                // Create Classifier Instance
+                APP.classifier = new cv.CascadeClassifier();
+                if (!APP.classifier.load(APP.xmlFileName)) {
+                    throw new Error("Gagal menginisialisasi Cascade Classifier");
+                }
+
+                APP.cascadeLoaded = true;
+                DOM.cascadeStatus.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                DOM.cascadeStatus.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> Cascade Siap`;
+                lucide.createIcons();
+
+                checkReadyState();
+            } catch (err) {
+                console.error("Gagal memuat Cascade XML:", err);
+                DOM.cascadeStatus.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20";
+                DOM.cascadeStatus.innerHTML = `<i data-lucide="alert-circle" class="w-3.5 h-3.5"></i> Gagal Memuat XML`;
+                lucide.createIcons();
+            }
+        }
+
+        // Callback when OpenCV.js module loaded completely
+        function onOpenCvReady() {
+            APP.cvLoaded = true;
+            DOM.cvStatus.className = "flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+            DOM.cvStatus.innerHTML = `<i data-lucide="check-circle" class="w-3.5 h-3.5"></i> OpenCV.js Siap`;
+            lucide.createIcons();
+
+            // Load cascade xml
+            loadHaarCascade();
+        }
+
+        function checkReadyState() {
+            if (APP.cvLoaded && APP.cascadeLoaded) {
+                DOM.btnToggleCam.disabled = false;
+            }
+        }
+
+        // Camera Video Streaming Toggle
+        async function toggleCamera() {
+            if (APP.isStreaming) {
+                stopCamera();
+            } else {
+                await startCamera();
+            }
+        }
+
+        async function startCamera() {
+            try {
+                APP.stream = await navigator.mediaDevices.getUserMedia({
+                    video: {
+                        width: { ideal: 640 },
+                        height: { ideal: 480 },
+                        facingMode: 'user'
+                    },
+                    audio: false
+                });
+
+                APP.videoEl.srcObject = APP.stream;
+                await APP.videoEl.play();
+
+                APP.isStreaming = true;
+                DOM.cameraPlaceholder.classList.add('hidden');
+                DOM.detectionBadge.classList.remove('hidden');
+                DOM.detectionBadge.classList.add('flex');
+
+                DOM.btnToggleCam.innerHTML = `<i data-lucide="video-off" class="w-4 h-4"></i> Hentikan Kamera`;
+                DOM.btnToggleCam.classList.remove('bg-cyan-600', 'hover:bg-cyan-500');
+                DOM.btnToggleCam.classList.add('bg-red-600', 'hover:bg-red-500');
+                lucide.createIcons();
+
+                // Match canvas width/height to video dimensions
+                APP.canvasEl.width = APP.videoEl.videoWidth || 640;
+                APP.canvasEl.height = APP.videoEl.videoHeight || 480;
+
+                // Allocate persistent Memory Mats for processing loop
+                initMats();
+
+                // Start Main Frame Processing Loop
+                requestAnimationFrame(processFrame);
+
+            } catch (err) {
+                console.error("Gagal Mengakses Kamera:", err);
+                alert("Tidak dapat mengakses kamera: " + err.message);
+            }
+        }
+
+        function stopCamera() {
+            if (APP.stream) {
+                APP.stream.getTracks().forEach(track => track.stop());
+                APP.videoEl.srcObject = null;
+            }
+            APP.isStreaming = false;
+
+            DOM.cameraPlaceholder.classList.remove('hidden');
+            DOM.detectionBadge.classList.add('hidden');
+            DOM.detectionBadge.classList.remove('flex');
+
+            DOM.btnToggleCam.innerHTML = `<i data-lucide="video" class="w-4 h-4"></i> Mulai Kamera`;
+            DOM.btnToggleCam.classList.remove('bg-red-600', 'hover:bg-red-500');
+            DOM.btnToggleCam.classList.add('bg-cyan-600', 'hover:bg-cyan-500');
+            lucide.createIcons();
+
+            // Free OpenCV persistent Mats
+            deleteMats();
+        }
+
+        // Pre-allocate OpenCV Mats to avoid memory leaks inside requestAnimationFrame
+        function initMats() {
+            const w = APP.canvasEl.width;
+            const h = APP.canvasEl.height;
+
+            APP.mats.src = new cv.Mat(h, w, cv.CV_8UC4);
+            APP.mats.gray = new cv.Mat(h, w, cv.CV_8UC1);
+            APP.mats.thresh = new cv.Mat(h, w, cv.CV_8UC1);
+            APP.mats.morph = new cv.Mat(h, w, cv.CV_8UC1);
+            APP.mats.blurredBg = new cv.Mat(h, w, cv.CV_8UC4);
+            APP.mats.mask = new cv.Mat(h, w, cv.CV_8UC1);
+            APP.mats.maskBlurred = new cv.Mat(h, w, cv.CV_8UC1);
+            APP.mats.mask3Ch = new cv.Mat(h, w, cv.CV_8UC4);
+            APP.mats.dst = new cv.Mat(h, w, cv.CV_8UC4);
+            APP.mats.faces = new cv.RectVector();
+        }
+
+        // Clean Memory Buffer
+        function deleteMats() {
+            Object.keys(APP.mats).forEach(key => {
+                if (APP.mats[key] && typeof APP.mats[key].delete === 'function') {
+                    APP.mats[key].delete();
+                }
+            });
+            APP.mats = {};
+        }
+
+        // Main Image Processing & Pipeline Rendering Function Loop
+        function processFrame() {
+            if (!APP.isStreaming) return;
+
+            const now = performance.now();
+            
+            try {
+                // Read frame from Video element to source Mat
+                APP.ctx.drawImage(APP.videoEl, 0, 0, APP.canvasEl.width, APP.canvasEl.height);
+                let imgData = APP.ctx.getImageData(0, 0, APP.canvasEl.width, APP.canvasEl.height);
+                APP.mats.src.data.set(imgData.data);
+
+                // 1. Grayscale Conversion
+                cv.cvtColor(APP.mats.src, APP.mats.gray, cv.COLOR_RGBA2GRAY, 0);
+
+                // 2. Pre-processing: Adaptive Thresholding
+                cv.adaptiveThreshold(
+                    APP.mats.gray,
+                    APP.mats.thresh,
+                    255,
+                    cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv.THRESH_BINARY,
+                    APP.thresholdBlockSize,
+                    APP.thresholdC
+                );
+
+                // 3. Morphological Operations
+                let M = cv.Mat.ones(APP.morphKernelSize, APP.morphKernelSize, cv.CV_8U);
+                let opType = (APP.morphOp === 'OPEN') ? cv.MORPH_OPEN : cv.MORPH_CLOSE;
+                cv.morphologyEx(APP.mats.thresh, APP.mats.morph, opType, M);
+                M.delete(); // release temporary element kernel
+
+                // 4. Object / Face Detection via Haar Cascade Classifier
+                let minSize = new cv.Size(80, 80);
+                let maxSize = new cv.Size(0, 0);
+                APP.classifier.detectMultiScale(APP.mats.gray, APP.mats.faces, 1.1, 3, 0, minSize, maxSize);
+
+                let faceDetected = APP.mats.faces.size() > 0;
+
+                if (faceDetected) {
+                    DOM.detectionText.textContent = `Terdeteksi ${APP.mats.faces.size()} Objek Wajah`;
+                    DOM.detectionBadge.classList.remove('border-slate-700/50', 'text-slate-300');
+                    DOM.detectionBadge.classList.add('border-emerald-500/50', 'text-emerald-300');
+                } else {
+                    DOM.detectionText.textContent = "Mencari Wajah...";
+                    DOM.detectionBadge.classList.add('border-slate-700/50', 'text-slate-300');
+                    DOM.detectionBadge.classList.remove('border-emerald-500/50', 'text-emerald-300');
+                }
+
+                // Render view options according to user pipeline mode choice
+                if (APP.viewMode === 'raw') {
+                    cv.imshow('canvas-output', APP.mats.src);
+                } else if (APP.viewMode === 'threshold') {
+                    cv.imshow('canvas-output', APP.mats.thresh);
+                } else if (APP.viewMode === 'morphology') {
+                    cv.imshow('canvas-output', APP.mats.morph);
+                } else {
+                    // Final Mode (with optional Bokeh blending and bounding boxes)
+                    if (APP.bokehEnabled && faceDetected) {
+                        // Create Alpha Mask for primary ROI face object
+                        APP.mats.mask.setTo(new cv.Scalar(0));
+
+                        for (let i = 0; i < APP.mats.faces.size(); ++i) {
+                            let face = APP.mats.faces.get(i);
+                            
+                            // Define soft smooth ellipse for face mask ROI
+                            let center = new cv.Point(face.x + face.width / 2, face.y + face.height / 2);
+                            let axes = new cv.Size(Math.round(face.width * 0.65), Math.round(face.height * 0.8));
+                            cv.ellipse(APP.mats.mask, center, axes, 0, 0, 360, new cv.Scalar(255), -1);
+                        }
+
+                        // Feather soft boundary transition edges on mask using GaussianBlur
+                        let maskBlurSize = new cv.Size(31, 31);
+                        cv.GaussianBlur(APP.mats.mask, APP.mats.maskBlurred, maskBlurSize, 0, 0, cv.BORDER_DEFAULT);
+
+                        // Create Heavy Blurred Background Frame (Bokeh effect)
+                        let ksize = new cv.Size(APP.blurKernelSize, APP.blurKernelSize);
+                        cv.GaussianBlur(APP.mats.src, APP.mats.blurredBg, ksize, 0, 0, cv.BORDER_DEFAULT);
+
+                        // Alpha Blend: dst = src * (mask) + blurredBg * (1 - mask)
+                        // Normalize mask to range [0, 1]
+                        let srcData = APP.mats.src.data;
+                        let bgData = APP.mats.blurredBg.data;
+                        let maskData = APP.mats.maskBlurred.data;
+                        let dstData = APP.mats.dst.data;
+
+                        const totalPixels = APP.canvasEl.width * APP.canvasEl.height;
+                        for (let i = 0; i < totalPixels; i++) {
+                            let alpha = maskData[i] / 255.0;
+                            let idx = i * 4;
+
+                            dstData[idx]     = Math.round(srcData[idx] * alpha + bgData[idx] * (1 - alpha));         // Red
+                            dstData[idx + 1] = Math.round(srcData[idx + 1] * alpha + bgData[idx + 1] * (1 - alpha)); // Green
+                            dstData[idx + 2] = Math.round(srcData[idx + 2] * alpha + bgData[idx + 2] * (1 - alpha)); // Blue
+                            dstData[idx + 3] = 255;                                                                 // Alpha
+                        }
+
+                        // Draw bounding ROI indicators on faces
+                        for (let i = 0; i < APP.mats.faces.size(); ++i) {
+                            let face = APP.mats.faces.get(i);
+                            let point1 = new cv.Point(face.x, face.y);
+                            let point2 = new cv.Point(face.x + face.width, face.y + face.height);
+                            
+                            // Draw bounding box on final image buffer
+                            cv.rectangle(APP.mats.dst, point1, point2, [6, 182, 212, 255], 2);
+                        }
+
+                        cv.imshow('canvas-output', APP.mats.dst);
+                    } else if (APP.bokehEnabled && !faceDetected) {
+                        // Apply background blur to whole screen if no object face detected
+                        let ksize = new cv.Size(APP.blurKernelSize, APP.blurKernelSize);
+                        cv.GaussianBlur(APP.mats.src, APP.mats.blurredBg, ksize, 0, 0, cv.BORDER_DEFAULT);
+                        cv.imshow('canvas-output', APP.mats.blurredBg);
+                    } else {
+                        // No Bokeh Filter: Just show src with face rectangles
+                        APP.mats.src.copyTo(APP.mats.dst);
+                        for (let i = 0; i < APP.mats.faces.size(); ++i) {
+                            let face = APP.mats.faces.get(i);
+                            let point1 = new cv.Point(face.x, face.y);
+                            let point2 = new cv.Point(face.x + face.width, face.y + face.height);
+                            cv.rectangle(APP.mats.dst, point1, point2, [6, 182, 212, 255], 2);
+                        }
+                        cv.imshow('canvas-output', APP.mats.dst);
+                    }
+                }
+
+                // FPS Counter Metrics
+                APP.frameCount++;
+                if (now - APP.fpsTimer >= 1000) {
+                    APP.fps = Math.round((APP.frameCount * 1000) / (now - APP.fpsTimer));
+                    DOM.fpsBadge.textContent = `${APP.fps} FPS`;
+                    APP.frameCount = 0;
+                    APP.fpsTimer = now;
+                }
+
+            } catch (err) {
+                console.error("Error pada Frame Processing Loop:", err);
+            }
+
+            // Request next frame recursively
+            if (APP.isStreaming) {
+                requestAnimationFrame(processFrame);
+            }
+        }
+
+        // Initialize App on DOM Ready
+        window.addEventListener('DOMContentLoaded', () => {
+            initEventListeners();
+        });
+    </script>
+
+    <!-- Load OpenCV.js asynchronously -->
+    <script async src="https://docs.opencv.org/4.x/opencv.js" onload="onOpenCvReady();" type="text/javascript"></script>
+</body>
+</html>
