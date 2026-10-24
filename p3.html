@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistem Pendeteksi Objek AI - Real-Time</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Font Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- TensorFlow.js Core & COCO-SSD Model CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        /* Style scrollbar custom */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+        /* Animation pulse alert border */
+        @keyframes borderPulse {
+            0% { border-color: rgba(239, 68, 68, 0.4); }
+            50% { border-color: rgba(239, 68, 68, 1); }
+            100% { border-color: rgba(239, 68, 68, 0.4); }
+        }
+        .alert-active {
+            animation: borderPulse 0.8s infinite;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between">
+
+    <!-- Header / Navbar -->
+    <header class="bg-slate-900/80 backdrop-blur border-b border-slate-800 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap justify-between items-center gap-2">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-indigo-600/20 text-indigo-400 rounded-lg border border-indigo-500/30">
+                    <i class="fa-solid fa-eye text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-tight">VisionDetect AI</h1>
+                    <p class="text-xs text-slate-400">Pendeteksi Objek Real-Time TensorFlow.js</p>
+                </div>
+            </div>
+            
+            <!-- Status Badge Indikator -->
+            <div id="statusBadge" class="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                <i class="fa-solid fa-spinner animate-spin"></i>
+                <span id="statusText">Memuat Model AI...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="max-w-7xl mx-auto w-full p-4 grid grid-cols-1 lg:grid-cols-12 gap-6 flex-1">
+        
+        <!-- Left & Center Area: Camera Video Stream & Canvas (8 Cols) -->
+        <div class="lg:col-span-8 flex flex-col gap-4">
+            
+            <!-- Video Container Canvas Frame -->
+            <div id="videoCard" class="relative bg-slate-900 border-2 border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex items-center justify-center min-h-[350px] sm:min-h-[480px]">
+                
+                <!-- Video Element (Hidden from display, mapped to canvas) -->
+                <video id="webcam" autoplay playsinline muted class="hidden"></video>
+                
+                <!-- Overlay Canvas untuk Bounding Box -->
+                <canvas id="outputCanvas" class="w-full h-full object-contain block"></canvas>
+                
+                <!-- Initial Loading / Placeholder Overlay -->
+                <div id="placeholderOverlay" class="absolute inset-0 flex flex-col items-center justify-center bg-slate-900/90 z-10 text-center p-6">
+                    <div id="loadingIcon" class="w-16 h-16 border-4 border-indigo-500/30 border-t-indigo-500 rounded-full animate-spin mb-4"></div>
+                    <h2 id="placeholderTitle" class="text-lg font-semibold mb-1">Mempersiapkan Model AI...</h2>
+                    <p id="placeholderDesc" class="text-sm text-slate-400 max-w-sm">Mohon tunggu sebentar, model COCO-SSD sedang diunduh ke browser Anda.</p>
+                </div>
+
+                <!-- Live Detection Flash Banner Alert -->
+                <div id="alertBanner" class="hidden absolute top-4 left-4 right-4 bg-red-600/90 text-white px-4 py-2.5 rounded-xl backdrop-blur flex items-center justify-between shadow-lg z-20 animate-bounce">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-bell text-yellow-300 text-lg"></i>
+                        <span id="alertMessage" class="font-medium text-sm">Objek Baru Terdeteksi!</span>
+                    </div>
+                    <span class="text-xs bg-red-800 px-2 py-0.5 rounded-full font-mono uppercase">Notifikasi</span>
+                </div>
+
+                <!-- Floating Stat Badge -->
+                <div class="absolute bottom-4 left-4 bg-slate-950/80 backdrop-blur border border-slate-800 px-3 py-1.5 rounded-lg flex items-center gap-4 text-xs font-mono text-slate-300 z-10">
+                    <div>FPS: <span id="fpsCount" class="text-indigo-400 font-bold">0</span></div>
+                    <div>Objek: <span id="objectCount" class="text-emerald-400 font-bold">0</span></div>
+                </div>
+            </div>
+
+            <!-- Control Panel -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg space-y-4">
+                <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-indigo-400"></i> Kontrol & Pengaturan
+                </h3>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    
+                    <!-- Camera Select -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">Pilih Kamera</label>
+                        <select id="cameraSelect" class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition" disabled>
+                            <option value="">Memuat Kamera...</option>
+                        </select>
+                    </div>
+
+                    <!-- Sensitivity / Confidence Threshold Slider -->
+                    <div>
+                        <div class="flex justify-between items-center mb-1.5">
+                            <label class="text-xs font-medium text-slate-400">Sensitivitas (Threshold)</label>
+                            <span id="thresholdVal" class="text-xs font-mono text-indigo-400 font-semibold">60%</span>
+                        </div>
+                        <input type="range" id="thresholdRange" min="20" max="95" value="60" class="w-full accent-indigo-500 cursor-pointer">
+                    </div>
+
+                    <!-- Audio Alert Toggle -->
+                    <div>
+                        <label class="block text-xs font-medium text-slate-400 mb-1.5">Notifikasi Audio</label>
+                        <div class="flex items-center gap-2">
+                            <select id="soundType" class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none">
+                                <option value="beep">Suara Beep</option>
+                                <option value="speech">Sebut Nama (Speech)</option>
+                                <option value="none">Mute (Mati)</option>
+                            </select>
+                            <button id="testSoundBtn" title="Uji Suara" class="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-300 text-xs">
+                                <i class="fa-solid fa-volume-high"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filter Object Input -->
+                <div>
+                    <label class="block text-xs font-medium text-slate-400 mb-1.5">
+                        Filter Objek Spesifik <span class="text-slate-500 font-normal">(Kosongkan untuk mendeteksi semua)</span>
+                    </label>
+                    <div class="flex flex-wrap gap-2 mb-2" id="quickFilters">
+                        <!-- Quick Filter Tag Buttons -->
+                        <button data-target="all" class="filter-tag px-2.5 py-1 rounded-md bg-indigo-600 text-white text-xs font-medium">Semua</button>
+                        <button data-target="person" class="filter-tag px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium">Manusia (person)</button>
+                        <button data-target="cell phone" class="filter-tag px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium">HP (cell phone)</button>
+                        <button data-target="cup" class="filter-tag px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium">Cangkir (cup)</button>
+                        <button data-target="laptop" class="filter-tag px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium">Laptop</button>
+                    </div>
+                    <input type="text" id="targetObjectInput" placeholder="Ketik nama objek dalam Bahasa Inggris (misal: dog, car, bottle)..." class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs focus:ring-2 focus:ring-indigo-500 outline-none transition">
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-wrap gap-3 pt-2">
+                    <button id="toggleCamBtn" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition shadow-lg shadow-indigo-600/20 disabled:opacity-50" disabled>
+                        <i class="fa-solid fa-play"></i> Start Kamera
+                    </button>
+                    <button id="captureBtn" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center gap-2 transition disabled:opacity-50" disabled>
+                        <i class="fa-solid fa-camera"></i> Tangkap Gambar
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Area: Log & History (4 Cols) -->
+        <div class="lg:col-span-4 flex flex-col gap-4">
+            
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 sm:p-5 shadow-lg flex-1 flex flex-col h-[500px] lg:h-auto">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
+                    <h3 class="text-sm font-semibold text-slate-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-clock-rotate-left text-indigo-400"></i> Riwayat Deteksi
+                    </h3>
+                    <div class="flex items-center gap-1">
+                        <button id="clearLogBtn" class="text-xs text-slate-400 hover:text-red-400 px-2 py-1 rounded transition" title="Bersihkan Log">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                        <button id="exportCsvBtn" class="text-xs text-slate-400 hover:text-indigo-400 px-2 py-1 rounded transition" title="Ekspor Log CSV">
+                            <i class="fa-solid fa-file-export"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Log List Container -->
+                <div id="logContainer" class="flex-1 overflow-y-auto space-y-2 pr-1">
+                    <div id="emptyLog" class="h-full flex flex-col items-center justify-center text-center p-6 text-slate-500">
+                        <i class="fa-solid fa-inbox text-3xl mb-2"></i>
+                        <p class="text-xs">Belum ada riwayat deteksi objek.</p>
+                    </div>
+                </div>
+
+                <!-- Footer Summary Log -->
+                <div class="pt-3 mt-2 border-t border-slate-800 flex justify-between text-xs text-slate-400">
+                    <span>Total Kejadian: <strong id="totalLogCount" class="text-slate-200">0</strong></span>
+                    <span id="lastDetectedTime">Terakhir: -</span>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Footer -->
+    <footer class="bg-slate-900 border-t border-slate-800 text-center py-3 text-xs text-slate-500">
+        VisionDetect AI - Ditenagai TensorFlow.js COCO-SSD
+    </footer>
+
+    <!-- Main Logic Script -->
+    <script>
+        // Global Application State
+        let model = null;
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('outputCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let isStreaming = false;
+        let animationFrameId = null;
+        let lastDetectedObjects = new Set();
+        let detectionHistory = [];
+        
+        // Control & Filter Settings
+        let minConfidence = 0.60;
+        let targetFilter = '';
+        let soundType = 'beep';
+        
+        // Performance Stats
+        let lastFrameTime = performance.now();
+        let frameCount = 0;
+        let currentFps = 0;
+
+        // UI References
+        const statusBadge = document.getElementById('statusBadge');
+        const statusText = document.getElementById('statusText');
+        const placeholderOverlay = document.getElementById('placeholderOverlay');
+        const placeholderTitle = document.getElementById('placeholderTitle');
+        const placeholderDesc = document.getElementById('placeholderDesc');
+        const cameraSelect = document.getElementById('cameraSelect');
+        const toggleCamBtn = document.getElementById('toggleCamBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const thresholdRange = document.getElementById('thresholdRange');
+        const thresholdVal = document.getElementById('thresholdVal');
+        const targetObjectInput = document.getElementById('targetObjectInput');
+        const soundTypeSelect = document.getElementById('soundType');
+        const alertBanner = document.getElementById('alertBanner');
+        const alertMessage = document.getElementById('alertMessage');
+        const videoCard = document.getElementById('videoCard');
+        const logContainer = document.getElementById('logContainer');
+        const emptyLog = document.getElementById('emptyLog');
+        const totalLogCount = document.getElementById('totalLogCount');
+        const lastDetectedTime = document.getElementById('lastDetectedTime');
+        const fpsCount = document.getElementById('fpsCount');
+        const objectCount = document.getElementById('objectCount');
+
+        // Web Audio Synthesizer (Sound Beep)
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+        function playBeepSound() {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(880, audioCtx.currentTime); // High pitch A5
+            gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.25);
+        }
+
+        function speakText(text) {
+            if ('speechSynthesis' in window) {
+                window.speechSynthesis.cancel();
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = 'en-US';
+                utterance.rate = 1.0;
+                utterance.volume = 0.8;
+                window.speechSynthesis.speak(utterance);
+            }
+        }
+
+        function triggerAlertSound(label) {
+            if (soundType === 'beep') {
+                playBeepSound();
+            } else if (soundType === 'speech') {
+                speakText(label);
+            }
+        }
+
+        // Initialize Load TensorFlow COCO-SSD Model
+        async function loadModel() {
+            try {
+                model = await cocoSsd.load();
+                statusBadge.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+                statusText.innerText = "Model AI Siap";
+                
+                placeholderTitle.innerText = "Model Siap Digunakan";
+                placeholderDesc.innerText = "Silakan pilih kamera dan klik 'Start Kamera' untuk memulai deteksi real-time.";
+                document.getElementById('loadingIcon').style.display = 'none';
+
+                // Fetch available cameras
+                await getCameras();
+                toggleCamBtn.disabled = false;
+            } catch (err) {
+                console.error("Gagal memuat model TensorFlow:", err);
+                statusText.innerText = "Gagal Memuat Model";
+                statusBadge.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-red-500/10 text-red-400 border border-red-500/20";
+                placeholderTitle.innerText = "Gagal Memuat AI";
+                placeholderDesc.innerText = "Terjadi kesalahan saat mengunduh model. Pastikan koneksi internet stabil.";
+            }
+        }
+
+        // List Camera Input Devices
+        async function getCameras() {
+            try {
+                await navigator.mediaDevices.getUserMedia({ video: true });
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(d => d.kind === 'videoinput');
+                
+                cameraSelect.innerHTML = '';
+                if (videoDevices.length === 0) {
+                    cameraSelect.innerHTML = '<option value="">Kamera Tidak Ditemukan</option>';
+                    return;
+                }
+
+                videoDevices.forEach((device, idx) => {
+                    const opt = document.createElement('option');
+                    opt.value = device.deviceId;
+                    opt.innerText = device.label || `Kamera ${idx + 1}`;
+                    cameraSelect.appendChild(opt);
+                });
+                cameraSelect.disabled = false;
+            } catch (err) {
+                console.error("Akses kamera ditolak:", err);
+                cameraSelect.innerHTML = '<option value="">Akses Kamera Ditolak</option>';
+            }
+        }
+
+        // Start WebRTC Camera Stream
+        async function startCamera() {
+            if (isStreaming) stopCamera();
+
+            const deviceId = cameraSelect.value;
+            const constraints = {
+                video: {
+                    deviceId: deviceId ? { exact: deviceId } : undefined,
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 }
+                }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => resolve();
+                });
+
+                video.play();
+                isStreaming = true;
+                placeholderOverlay.style.display = 'none';
+                captureBtn.disabled = false;
+                
+                // Adjust Canvas Size to Video Dimensions
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+
+                statusBadge.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-indigo-500/10 text-indigo-400 border border-indigo-500/20";
+                statusText.innerText = "Mendeteksi...";
+
+                toggleCamBtn.innerHTML = '<i class="fa-solid fa-stop"></i> Stop Kamera';
+                toggleCamBtn.className = "flex-1 bg-red-600 hover:bg-red-500 text-white py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition shadow-lg shadow-red-600/20";
+
+                detectLoop();
+            } catch (err) {
+                console.error("Tidak dapat membuka kamera:", err);
+                alert("Gagal mengakses kamera. Mohon izinkan akses kamera pada browser Anda.");
+            }
+        }
+
+        // Stop Camera Stream
+        function stopCamera() {
+            isStreaming = false;
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            placeholderOverlay.style.display = 'flex';
+            captureBtn.disabled = true;
+
+            statusBadge.className = "flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+            statusText.innerText = "Model AI Siap";
+
+            toggleCamBtn.innerHTML = '<i class="fa-solid fa-play"></i> Start Kamera';
+            toggleCamBtn.className = "flex-1 bg-indigo-600 hover:bg-indigo-500 text-white py-2.5 px-4 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition shadow-lg shadow-indigo-600/20";
+            
+            fpsCount.innerText = '0';
+            objectCount.innerText = '0';
+        }
+
+        // Object Detection Loop Frame by Frame
+        async function detectLoop() {
+            if (!isStreaming) return;
+
+            // Compute FPS
+            const now = performance.now();
+            frameCount++;
+            if (now - lastFrameTime >= 1000) {
+                currentFps = frameCount;
+                fpsCount.innerText = currentFps;
+                frameCount = 0;
+                lastFrameTime = now;
+            }
+
+            // Perform detection using COCO-SSD Model
+            const predictions = await model.detect(video);
+            
+            // Filter results by confidence & custom label filter
+            const filteredPredictions = predictions.filter(pred => {
+                const meetsConfidence = pred.score >= minConfidence;
+                const matchesTarget = targetFilter === '' || pred.class.toLowerCase().includes(targetFilter.toLowerCase());
+                return meetsConfidence && matchesTarget;
+            });
+
+            // Draw bounding boxes on canvas
+            drawDetections(filteredPredictions);
+
+            // Trigger Alerts & Log History
+            processAlertsAndLogs(filteredPredictions);
+
+            // Request next animation frame
+            animationFrameId = requestAnimationFrame(detectLoop);
+        }
+
+        // Render Bounding Boxes & Text Labels
+        function drawDetections(predictions) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Render camera frame on canvas
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            objectCount.innerText = predictions.length;
+
+            predictions.forEach(pred => {
+                const [x, y, width, height] = pred.bbox;
+                const scorePercent = Math.round(pred.score * 100);
+                const labelText = `${pred.class.toUpperCase()} ${scorePercent}%`;
+
+                // Bounding box frame style
+                ctx.strokeStyle = '#6366f1'; // Indigo-500
+                ctx.lineWidth = 3;
+                ctx.lineJoin = 'round';
+                ctx.strokeRect(x, y, width, height);
+
+                // Label background card
+                ctx.font = 'bold 13px Inter, sans-serif';
+                const textWidth = ctx.measureText(labelText).width;
+                const textHeight = 18;
+
+                ctx.fillStyle = '#6366f1';
+                ctx.fillRect(x, y > textHeight ? y - textHeight - 4 : y, textWidth + 12, textHeight + 4);
+
+                // Label Text
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(labelText, x + 6, y > textHeight ? y - 7 : y + 13);
+            });
+        }
+
+        // Process Object Alerts and Keep Log History
+        function processAlertsAndLogs(predictions) {
+            const currentObjectNames = new Set(predictions.map(p => p.class));
+            const newDetectedObjects = [];
+
+            // Detect newly introduced objects
+            currentObjectNames.forEach(objName => {
+                if (!lastDetectedObjects.has(objName)) {
+                    newDetectedObjects.push(objName);
+                }
+            });
+
+            // Trigger visual and sound notification if new object appears
+            if (newDetectedObjects.length > 0) {
+                const firstObj = newDetectedObjects[0];
+                showAlertUI(`Terdeteksi: ${firstObj}`);
+                triggerAlertSound(firstObj);
+
+                // Add to history log
+                predictions.forEach(p => {
+                    if (newDetectedObjects.includes(p.class)) {
+                        addLogEntry(p.class, Math.round(p.score * 100));
+                    }
+                });
+            }
+
+            lastDetectedObjects = currentObjectNames;
+        }
+
+        // Visual Pop-up Flash Banner Alert
+        let alertTimeout = null;
+        function showAlertUI(msg) {
+            alertMessage.innerText = msg;
+            alertBanner.classList.remove('hidden');
+            videoCard.classList.add('alert-active');
+
+            if (alertTimeout) clearTimeout(alertTimeout);
+            alertTimeout = setTimeout(() => {
+                alertBanner.classList.add('hidden');
+                videoCard.classList.remove('alert-active');
+            }, 2500);
+        }
+
+        // Add Entry into History Log
+        function addLogEntry(label, confidence) {
+            const timestamp = new Date();
+            const timeStr = timestamp.toLocaleTimeString('id-ID');
+            
+            // Create mini snapshot thumbnail
+            const snapshotUrl = canvas.toDataURL('image/jpeg', 0.5);
+
+            const logItem = {
+                id: Date.now(),
+                label: label,
+                confidence: confidence,
+                time: timeStr,
+                snapshot: snapshotUrl
+            };
+
+            detectionHistory.unshift(logItem);
+            renderLogList();
+        }
+
+        // Render History Log List
+        function renderLogList() {
+            if (detectionHistory.length === 0) {
+                emptyLog.style.display = 'flex';
+                totalLogCount.innerText = '0';
+                lastDetectedTime.innerText = 'Terakhir: -';
+                return;
+            }
+
+            emptyLog.style.display = 'none';
+            totalLogCount.innerText = detectionHistory.length;
+            lastDetectedTime.innerText = `Terakhir: ${detectionHistory[0].time}`;
+
+            logContainer.innerHTML = '';
+            detectionHistory.forEach(item => {
+                const div = document.createElement('div');
+                div.className = "bg-slate-800/80 border border-slate-700/60 rounded-xl p-2.5 flex items-center gap-3 transition hover:border-slate-600";
+                div.innerHTML = `
+                    <img src="${item.snapshot}" class="w-12 h-12 rounded-lg object-cover bg-slate-900 border border-slate-700 flex-shrink-0" alt="Snapshot">
+                    <div class="flex-1 min-w-0">
+                        <div class="flex items-center justify-between">
+                            <h4 class="text-xs font-semibold capitalize text-slate-200 truncate">${item.label}</h4>
+                            <span class="text-[10px] font-mono text-slate-400">${item.time}</span>
+                        </div>
+                        <div class="mt-1 flex items-center gap-2">
+                            <div class="flex-1 bg-slate-700 h-1.5 rounded-full overflow-hidden">
+                                <div class="bg-indigo-500 h-full rounded-full" style="width: ${item.confidence}%"></div>
+                            </div>
+                            <span class="text-[10px] font-mono text-indigo-300">${item.confidence}%</span>
+                        </div>
+                    </div>
+                `;
+                logContainer.appendChild(div);
+            });
+        }
+
+        // Capture Manual Snapshot
+        function captureSnapshot() {
+            if (!isStreaming) return;
+            const snapshotUrl = canvas.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.href = snapshotUrl;
+            link.download = `deteksi_snapshot_${Date.now()}.png`;
+            link.click();
+        }
+
+        // Export Log History to CSV
+        function exportLogCSV() {
+            if (detectionHistory.length === 0) {
+                alert("Riwayat log masih kosong!");
+                return;
+            }
+
+            let csvContent = "data:text/csv;charset=utf-8,ID,Label,Confidence (%),Waktu\n";
+            detectionHistory.forEach(row => {
+                csvContent += `${row.id},${row.label},${row.confidence},${row.time}\n`;
+            });
+
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", `log_deteksi_objek_${Date.now()}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        // Event Handlers & Listeners
+        toggleCamBtn.addEventListener('click', () => {
+            if (isStreaming) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
+        });
+
+        cameraSelect.addEventListener('change', () => {
+            if (isStreaming) startCamera();
+        });
+
+        thresholdRange.addEventListener('input', (e) => {
+            minConfidence = e.target.value / 100;
+            thresholdVal.innerText = `${e.target.value}%`;
+        });
+
+        targetObjectInput.addEventListener('input', (e) => {
+            targetFilter = e.target.value.trim();
+        });
+
+        soundTypeSelect.addEventListener('change', (e) => {
+            soundType = e.target.value;
+        });
+
+        document.getElementById('testSoundBtn').addEventListener('click', () => {
+            triggerAlertSound("Test Object");
+        });
+
+        captureBtn.addEventListener('click', captureSnapshot);
+
+        document.getElementById('clearLogBtn').addEventListener('click', () => {
+            detectionHistory = [];
+            renderLogList();
+        });
+
+        document.getElementById('exportCsvBtn').addEventListener('click', exportLogCSV);
+
+        // Quick Tag Filter Buttons
+        document.querySelectorAll('.filter-tag').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                document.querySelectorAll('.filter-tag').forEach(b => {
+                    b.className = "filter-tag px-2.5 py-1 rounded-md bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium";
+                });
+                e.target.className = "filter-tag px-2.5 py-1 rounded-md bg-indigo-600 text-white text-xs font-medium";
+
+                const target = e.target.getAttribute('data-target');
+                if (target === 'all') {
+                    targetFilter = '';
+                    targetObjectInput.value = '';
+                } else {
+                    targetFilter = target;
+                    targetObjectInput.value = target;
+                }
+            });
+        });
+
+        // Initialize App on Window Load
+        window.addEventListener('load', () => {
+            loadModel();
+        });
+    </script>
+</body>
+</html>
