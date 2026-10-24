@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Object Detection - Real-time Webcam</title>
+    <title>AI Object Detection & Thresholding Vision Engine</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Font Awesome Icons -->
@@ -20,11 +20,10 @@
             color: #f8fafc;
         }
         .glass-panel {
-            background: rgba(30, 41, 59, 0.7);
+            background: rgba(30, 41, 59, 0.75);
             backdrop-filter: blur(12px);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
         }
@@ -35,9 +34,6 @@
             background: #334155;
             border-radius: 4px;
         }
-        ::-webkit-scrollbar-thumb:hover {
-            background: #475569;
-        }
     </style>
 </head>
 <body class="min-h-screen flex flex-col justify-between">
@@ -46,12 +42,12 @@
     <header class="glass-panel sticky top-0 z-50 px-4 py-3 shadow-lg border-b border-slate-800">
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-500 via-purple-500 to-cyan-400 flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
                     <i class="fa-solid fa-eye text-xl"></i>
                 </div>
                 <div>
-                    <h1 class="font-bold text-lg leading-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">VisionAI Detector</h1>
-                    <p class="text-xs text-slate-400">Deteksi Objek Real-time via Webcam</p>
+                    <h1 class="font-bold text-lg leading-tight bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent">VisionAI & Threshold Engine</h1>
+                    <p class="text-xs text-slate-400">Deteksi Objek AI + Pemisah Latar Belakang (Thresholding)</p>
                 </div>
             </div>
             
@@ -66,249 +62,211 @@
     <!-- Main Content Grid -->
     <main class="max-w-7xl mx-auto w-full p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
         
-        <!-- Left 2 Columns: Camera Feed -->
+        <!-- Left 2 Columns: Video & Threshold Canvas Streams -->
         <div class="lg:col-span-2 flex flex-col gap-4">
             
-            <!-- Video Container -->
-            <div class="relative rounded-2xl overflow-hidden glass-panel aspect-video flex items-center justify-center border border-slate-700/50 shadow-2xl group">
-                <!-- Fallback Loading State -->
-                <div id="videoLoader" class="absolute inset-0 z-10 flex flex-col items-center justify-center bg-slate-900/90 gap-3">
-                    <div class="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
-                    <p class="text-sm text-slate-400 font-medium">Menyiapkan Kamera dan AI Engine...</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Main Detection Canvas -->
+                <div class="relative rounded-2xl overflow-hidden glass-panel aspect-video flex items-center justify-center border border-slate-700/50 shadow-2xl group">
+                    <div id="videoLoader" class="absolute inset-0 z-20 flex flex-col items-center justify-center bg-slate-900/90 gap-3">
+                        <div class="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin"></div>
+                        <p class="text-xs text-slate-400 font-medium">Menyiapkan Kamera & AI Model...</p>
+                    </div>
+
+                    <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100 hidden"></video>
+                    <canvas id="canvas" class="w-full h-full transform -scale-x-100 z-10"></canvas>
+
+                    <div class="absolute top-2 left-2 z-20 px-2.5 py-1 rounded-md bg-black/60 backdrop-blur-md text-[10px] font-semibold text-indigo-300 border border-indigo-500/30">
+                        <i class="fa-solid fa-camera mr-1"></i> Stream AI Bounding Box
+                    </div>
+
+                    <!-- Notification Toast Overlay -->
+                    <div id="toastContainer" class="absolute bottom-3 left-3 right-3 z-30 flex flex-col gap-2 pointer-events-none"></div>
                 </div>
 
-                <!-- Video and Canvas Stack -->
-                <video id="webcam" autoplay playsinline muted class="w-full h-full object-cover transform -scale-x-100"></video>
-                <canvas id="canvas" class="absolute inset-0 w-full h-full transform -scale-x-100 pointer-events-none z-10"></canvas>
+                <!-- Thresholding & Segmented Mask Canvas -->
+                <div class="relative rounded-2xl overflow-hidden glass-panel aspect-video flex items-center justify-center border border-slate-700/50 shadow-2xl">
+                    <canvas id="thresholdCanvas" class="w-full h-full transform -scale-x-100 z-10 bg-black"></canvas>
+                    
+                    <div class="absolute top-2 left-2 z-20 px-2.5 py-1 rounded-md bg-black/60 backdrop-blur-md text-[10px] font-semibold text-cyan-300 border border-cyan-500/30">
+                        <i class="fa-solid fa-filter mr-1"></i> Hasil Thresholding (Pemisah Objek)
+                    </div>
 
-                <!-- Toast Visual Notification Overlay -->
-                <div id="toastContainer" class="absolute top-4 left-4 right-4 z-20 flex flex-col gap-2 pointer-events-none"></div>
-
-                <!-- FPS & Stats Overlay -->
-                <div class="absolute bottom-4 left-4 z-20 flex gap-2">
-                    <span class="px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[11px] font-mono text-emerald-400 border border-white/10">
-                        FPS: <span id="fpsCount">0</span>
-                    </span>
-                    <span class="px-2.5 py-1 rounded-lg bg-black/60 backdrop-blur-md text-[11px] font-mono text-cyan-400 border border-white/10">
-                        Objek: <span id="objectCount">0</span>
-                    </span>
+                    <div id="threshValDisplay" class="absolute bottom-2 right-2 z-20 px-2 py-0.5 rounded bg-slate-900/80 text-[10px] font-mono text-slate-300">
+                        Threshold: <span id="currentThreshVal">128</span>
+                    </div>
                 </div>
+            </div>
 
-                <!-- Quick Controls Bar on Video -->
-                <div class="absolute bottom-4 right-4 z-20 flex gap-2">
-                    <button id="toggleCameraBtn" class="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-white backdrop-blur-md border border-white/10 transition shadow-lg" title="Mulai / Pause Kamera">
-                        <i class="fa-solid fa-pause"></i>
+            <!-- Global Stats Bar -->
+            <div class="glass-panel p-3 rounded-xl flex items-center justify-between text-xs border border-slate-700/50">
+                <div class="flex gap-4">
+                    <span class="text-slate-400">FPS: <strong id="fpsCount" class="text-emerald-400 font-mono">0</strong></span>
+                    <span class="text-slate-400">Objek Terdeteksi: <strong id="objectCount" class="text-cyan-400 font-mono">0</strong></span>
+                </div>
+                <div class="flex gap-2">
+                    <button id="toggleCameraBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 transition flex items-center gap-1 text-xs">
+                        <i class="fa-solid fa-pause"></i> <span id="toggleText">Pause</span>
                     </button>
-                    <button id="switchCameraBtn" class="p-2.5 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-white backdrop-blur-md border border-white/10 transition shadow-lg" title="Ganti Kamera">
+                    <button id="switchCameraBtn" class="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 transition text-xs" title="Ganti Kamera">
                         <i class="fa-solid fa-camera-rotate"></i>
                     </button>
                 </div>
             </div>
 
-            <!-- Detected Tags Quick View -->
+            <!-- Active Object Tags -->
             <div class="glass-panel p-4 rounded-2xl flex flex-col gap-2">
-                <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Objek Terdeteksi Saat Ini</h3>
-                <div id="activeTags" class="flex flex-wrap gap-2 min-h-[32px] items-center">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400">Daftar Objek Aktif</h3>
+                <div id="activeTags" class="flex flex-wrap gap-2 min-h-[30px] items-center">
                     <span class="text-xs text-slate-500 italic">Belum ada objek terdeteksi...</span>
                 </div>
             </div>
         </div>
 
-        <!-- Right 1 Column: Control Panel & Activity Log -->
-        <div class="flex flex-col gap-6">
+        <!-- Right 1 Column: Control Panel & Filters -->
+        <div class="flex flex-col gap-5">
             
-            <!-- Control Panel -->
-            <div class="glass-panel p-5 rounded-2xl flex flex-col gap-5 border border-slate-700/50">
-                <div class="flex items-center gap-2 border-b border-slate-700/60 pb-3">
-                    <i class="fa-solid fa-sliders text-indigo-400"></i>
-                    <h2 class="font-semibold text-sm tracking-wide">Pengaturan Deteksi</h2>
-                </div>
-
-                <!-- Threshold Slider -->
-                <div class="flex flex-col gap-2">
-                    <div class="flex justify-between text-xs">
-                        <label for="threshold" class="text-slate-300 font-medium">Confidence Threshold</label>
-                        <span id="thresholdValue" class="text-indigo-400 font-bold">60%</span>
+            <!-- Thresholding Control Panel -->
+            <div class="glass-panel p-5 rounded-2xl flex flex-col gap-4 border border-cyan-500/30">
+                <div class="flex items-center justify-between border-b border-slate-700/60 pb-3">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-sliders text-cyan-400"></i>
+                        <h2 class="font-semibold text-sm tracking-wide">Filter Thresholding</h2>
                     </div>
-                    <input type="range" id="threshold" min="30" max="95" value="60" 
-                           class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
-                    <p class="text-[11px] text-slate-400">Makin tinggi nilai, makin akurat deteksi yang disaring.</p>
+                    <span class="text-[10px] bg-cyan-500/20 text-cyan-300 px-2 py-0.5 rounded-full font-mono">Computer Vision</span>
                 </div>
 
-                <!-- Target Filter -->
-                <div class="flex flex-col gap-2">
-                    <label for="targetFilter" class="text-xs text-slate-300 font-medium">Saring Objek Khusus</label>
-                    <select id="targetFilter" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition">
-                        <option value="all">Semua Objek (All Objects)</option>
-                        <option value="person">Manusia (Person)</option>
-                        <option value="cell phone">HP / Cell Phone</option>
-                        <option value="car">Mobil / Car</option>
-                        <option value="laptop">Laptop</option>
-                        <option value="cat">Kucing / Cat</option>
-                        <option value="dog">Anjing / Dog</option>
-                        <option value="bottle">Botol / Bottle</option>
+                <!-- Mode Select -->
+                <div class="flex flex-col gap-1.5">
+                    <label for="threshMode" class="text-xs text-slate-300 font-medium">Mode Pemisah Objek</label>
+                    <select id="threshMode" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-cyan-500 transition">
+                        <option value="binary">Binary Thresholding (Hitam-Putih)</option>
+                        <option value="otsu">Otsu Automatic Thresholding</option>
+                        <option value="foreground">Foreground Masking (Objek Berwarna)</option>
+                        <option value="hsv">Color Range Filter (Warna Latar)</option>
+                        <option value="none">Nonaktifkan Filter</option>
                     </select>
                 </div>
 
-                <!-- Notification Settings Switches -->
-                <div class="flex flex-col gap-3 pt-2 border-t border-slate-700/60">
-                    <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Modus Notifikasi</span>
-                    
-                    <!-- Sound Alert Toggle -->
-                    <label class="flex items-center justify-between cursor-pointer">
-                        <div class="flex items-center gap-2">
-                            <i class="fa-solid fa-bell text-slate-400 text-xs w-4"></i>
-                            <span class="text-xs text-slate-300">Suara Beep Notifikasi</span>
-                        </div>
-                        <input type="checkbox" id="audioToggle" class="sr-only peer" checked>
-                        <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 relative"></div>
-                    </label>
-
-                    <!-- Text-to-Speech Toggle -->
-                    <label class="flex items-center justify-between cursor-pointer">
-                        <div class="flex items-center gap-2">
-                            <i class="fa-solid fa-volume-high text-slate-400 text-xs w-4"></i>
-                            <span class="text-xs text-slate-300">Suara Narasi Suara (Speech)</span>
-                        </div>
-                        <input type="checkbox" id="speechToggle" class="sr-only peer" checked>
-                        <div class="w-9 h-5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-indigo-600 relative"></div>
-                    </label>
-
-                    <!-- Language for Speech -->
-                    <div class="flex flex-col gap-1.5 mt-1">
-                        <label for="speechLang" class="text-[11px] text-slate-400">Bahasa Narasi Suara</label>
-                        <select id="speechLang" class="bg-slate-800 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-300 focus:outline-none focus:border-indigo-500">
-                            <option value="id-ID">Bahasa Indonesia</option>
-                            <option value="en-US">English (US)</option>
-                        </select>
+                <!-- Manual Threshold Value Slider -->
+                <div id="thresholdSliderGroup" class="flex flex-col gap-2">
+                    <div class="flex justify-between text-xs">
+                        <label for="threshSlider" class="text-slate-300">Nilai Cutoff Threshold</label>
+                        <span id="sliderVal" class="text-cyan-400 font-bold font-mono">128</span>
                     </div>
+                    <input type="range" id="threshSlider" min="0" max="255" value="128" 
+                           class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-400">
+                    <p class="text-[10px] text-slate-400">Nilai piksel di atas cutoff akan diubah menjadi piksel foreground.</p>
+                </div>
+
+                <!-- Invert Mask Switch -->
+                <label class="flex items-center justify-between cursor-pointer pt-1">
+                    <span class="text-xs text-slate-300">Balik Warna Mask (Invert Mask)</span>
+                    <input type="checkbox" id="invertToggle" class="sr-only peer">
+                    <div class="w-8 h-4.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-cyan-500 relative"></div>
+                </label>
+            </div>
+
+            <!-- Detection AI Control Panel -->
+            <div class="glass-panel p-5 rounded-2xl flex flex-col gap-4 border border-slate-700/50">
+                <div class="flex items-center gap-2 border-b border-slate-700/60 pb-3">
+                    <i class="fa-solid fa-robot text-indigo-400"></i>
+                    <h2 class="font-semibold text-sm tracking-wide">Pengaturan AI Detection</h2>
+                </div>
+
+                <!-- AI Confidence Threshold Slider -->
+                <div class="flex flex-col gap-2">
+                    <div class="flex justify-between text-xs">
+                        <label for="threshold" class="text-slate-300">Akurasi Minimum AI</label>
+                        <span id="thresholdValue" class="text-indigo-400 font-bold font-mono">60%</span>
+                    </div>
+                    <input type="range" id="threshold" min="30" max="95" value="60" 
+                           class="w-full h-2 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                </div>
+
+                <!-- Target Filter -->
+                <div class="flex flex-col gap-1.5">
+                    <label for="targetFilter" class="text-xs text-slate-300">Saring Jenis Objek</label>
+                    <select id="targetFilter" class="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500 transition">
+                        <option value="all">Semua Objek (80+ Jenis)</option>
+                        <option value="person">Manusia (Person)</option>
+                        <option value="cell phone">HP / Cell Phone</option>
+                        <option value="laptop">Laptop</option>
+                        <option value="bottle">Botol / Bottle</option>
+                        <option value="cup">Cangkir / Cup</option>
+                        <option value="book">Buku / Book</option>
+                    </select>
+                </div>
+
+                <!-- Notification Audio Switches -->
+                <div class="flex flex-col gap-2.5 pt-2 border-t border-slate-700/60">
+                    <label class="flex items-center justify-between cursor-pointer">
+                        <span class="text-xs text-slate-300"><i class="fa-solid fa-bell text-slate-400 mr-1.5"></i>Suara Beep Notifikasi</span>
+                        <input type="checkbox" id="audioToggle" class="sr-only peer" checked>
+                        <div class="w-8 h-4.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                    </label>
+
+                    <label class="flex items-center justify-between cursor-pointer">
+                        <span class="text-xs text-slate-300"><i class="fa-solid fa-volume-high text-slate-400 mr-1.5"></i>Narasi Suara (Speech)</span>
+                        <input type="checkbox" id="speechToggle" class="sr-only peer" checked>
+                        <div class="w-8 h-4.5 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-indigo-600 relative"></div>
+                    </label>
                 </div>
             </div>
 
             <!-- Activity Log -->
-            <div class="glass-panel p-5 rounded-2xl flex flex-col gap-3 border border-slate-700/50 flex-1 min-h-[220px]">
-                <div class="flex justify-between items-center border-b border-slate-700/60 pb-3">
-                    <div class="flex items-center gap-2">
-                        <i class="fa-solid fa-list-check text-cyan-400"></i>
-                        <h2 class="font-semibold text-sm tracking-wide">Riwayat Deteksi</h2>
-                    </div>
-                    <button id="clearLogBtn" class="text-[11px] text-slate-400 hover:text-rose-400 transition">
-                        <i class="fa-solid fa-trash-can mr-1"></i>Hapus
-                    </button>
+            <div class="glass-panel p-4 rounded-2xl flex flex-col gap-3 border border-slate-700/50 flex-1 min-h-[160px]">
+                <div class="flex justify-between items-center border-b border-slate-700/60 pb-2">
+                    <h2 class="font-semibold text-xs text-slate-300"><i class="fa-solid fa-clock-rotate-left mr-1.5 text-cyan-400"></i>Riwayat Deteksi</h2>
+                    <button id="clearLogBtn" class="text-[10px] text-slate-400 hover:text-rose-400 transition">Clear</button>
                 </div>
-
-                <div id="logContainer" class="flex flex-col gap-2 overflow-y-auto max-h-[200px] pr-1 text-xs text-slate-300">
-                    <div class="text-slate-500 italic text-center py-4">Belum ada riwayat deteksi</div>
+                <div id="logContainer" class="flex flex-col gap-1.5 overflow-y-auto max-h-[150px] pr-1 text-xs">
+                    <div class="text-slate-500 italic text-center py-3 text-[11px]">Belum ada deteksi...</div>
                 </div>
             </div>
 
         </div>
     </main>
 
-    <!-- Footer -->
-    <footer class="text-center py-3 text-xs text-slate-500 border-t border-slate-800/80 mt-4">
-        VisionAI &copy; 2026 - Powered by TensorFlow.js & COCO-SSD Model
+    <footer class="text-center py-3 text-xs text-slate-500 border-t border-slate-800/80 mt-2">
+        VisionAI & Threshold Engine &copy; 2026 - Real-Time Computer Vision System
     </footer>
 
-    <!-- Audio Context for synthesized beep sound -->
+    <!-- JavaScript Logic -->
     <script>
-        // Dictionary Terjemahan Nama Objek ke Bahasa Indonesia
         const translations = {
-            'person': 'orang',
-            'bicycle': 'sepeda',
-            'car': 'mobil',
-            'motorcycle': 'sepeda motor',
-            'airplane': 'pesawat',
-            'bus': 'bis',
-            'train': 'kereta',
-            'truck': 'truk',
-            'boat': 'perahu',
-            'traffic light': 'lampu lalu lintas',
-            'fire hydrant': 'pemadam kebakaran',
-            'stop sign': 'tanda stop',
-            'parking meter': 'meteran parkir',
-            'bench': 'bangku',
-            'bird': 'burung',
-            'cat': 'kucing',
-            'dog': 'anjing',
-            'horse': 'kuda',
-            'sheep': 'domba',
-            'cow': 'sapi',
-            'elephant': 'gajah',
-            'bear': 'beruang',
-            'zebra': 'zebra',
-            'giraffe': 'jerapah',
-            'backpack': 'tas punggung',
-            'umbrella': 'payung',
-            'handbag': 'tas tangan',
-            'tie': 'dasi',
-            'suitcase': 'koper',
-            'frisbee': 'frisbee',
-            'skis': 'papan ski',
-            'snowboard': 'snowboard',
-            'sports ball': 'bola olahraga',
-            'kite': 'layangan',
-            'baseball bat': 'tongkat bisbol',
-            'baseball glove': 'sarung tangan bisbol',
-            'skateboard': 'papan seluncur',
-            'surfboard': 'papan selancar',
-            'tennis racket': 'raket tenis',
-            'bottle': 'botol',
-            'wine glass': 'gelas anggur',
-            'cup': 'cangkir',
-            'fork': 'garpu',
-            'knife': 'pisau',
-            'spoon': 'sendok',
-            'bowl': 'mangkuk',
-            'banana': 'pisang',
-            'apple': 'apel',
-            'sandwich': 'roti lapis',
-            'orange': 'jeruk',
-            'broccoli': 'brokoli',
-            'carrot': 'wortel',
-            'hot dog': 'sosis bakar',
-            'pizza': 'piza',
-            'donut': 'donat',
-            'cake': 'kue',
-            'chair': 'kursi',
-            'couch': 'sofa',
-            'potted plant': 'tanaman hias',
-            'bed': 'tempat tidur',
-            'dining table': 'meja makan',
-            'toilet': 'toilet',
-            'tv': 'televisi',
-            'laptop': 'laptop',
-            'mouse': 'tetikus',
-            'remote': 'remot',
-            'keyboard': 'papan ketik',
-            'cell phone': 'handphone',
-            'microwave': 'mikrowave',
-            'oven': 'oven',
-            'toaster': 'pemanggang roti',
-            'sink': 'wastafel',
-            'refrigerator': 'kulkas',
-            'book': 'buku',
-            'clock': 'jam',
-            'vase': 'pot bunga',
-            'scissors': 'gunting',
-            'teddy bear': 'boneka beruang',
-            'hair drier': 'pengering rambut',
-            'toothbrush': 'sikat gigi'
+            'person': 'orang', 'bicycle': 'sepeda', 'car': 'mobil', 'motorcycle': 'motor',
+            'airplane': 'pesawat', 'bus': 'bis', 'train': 'kereta', 'truck': 'truk',
+            'boat': 'perahu', 'bottle': 'botol', 'cup': 'cangkir', 'fork': 'garpu',
+            'knife': 'pisau', 'spoon': 'sendok', 'bowl': 'mangkuk', 'banana': 'pisang',
+            'apple': 'apel', 'chair': 'kursi', 'couch': 'sofa', 'potted plant': 'tanaman',
+            'bed': 'kasur', 'dining table': 'meja makan', 'tv': 'televisi', 'laptop': 'laptop',
+            'mouse': 'mouse', 'remote': 'remot', 'keyboard': 'keyboard', 'cell phone': 'handphone',
+            'book': 'buku', 'clock': 'jam', 'scissors': 'gunting', 'teddy bear': 'boneka'
         };
 
         // DOM Elements
         const video = document.getElementById('webcam');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const thresholdCanvas = document.getElementById('thresholdCanvas');
+        const threshCtx = thresholdCanvas.getContext('2d');
         const videoLoader = document.getElementById('videoLoader');
         const statusPill = document.getElementById('statusPill');
         const statusText = document.getElementById('statusText');
+        
+        const threshMode = document.getElementById('threshMode');
+        const threshSlider = document.getElementById('threshSlider');
+        const sliderVal = document.getElementById('sliderVal');
+        const currentThreshVal = document.getElementById('currentThreshVal');
+        const invertToggle = document.getElementById('invertToggle');
+        const thresholdSliderGroup = document.getElementById('thresholdSliderGroup');
+
         const thresholdInput = document.getElementById('threshold');
         const thresholdValue = document.getElementById('thresholdValue');
         const targetFilter = document.getElementById('targetFilter');
         const audioToggle = document.getElementById('audioToggle');
         const speechToggle = document.getElementById('speechToggle');
-        const speechLang = document.getElementById('speechLang');
         const toastContainer = document.getElementById('toastContainer');
         const logContainer = document.getElementById('logContainer');
         const clearLogBtn = document.getElementById('clearLogBtn');
@@ -316,213 +274,255 @@
         const fpsCount = document.getElementById('fpsCount');
         const objectCount = document.getElementById('objectCount');
         const toggleCameraBtn = document.getElementById('toggleCameraBtn');
+        const toggleText = document.getElementById('toggleText');
         const switchCameraBtn = document.getElementById('switchCameraBtn');
 
-        // Application State
+        // State Variables
         let model = null;
         let isDetecting = true;
         let minConfidence = 0.60;
-        let facingMode = 'user'; // 'user' or 'environment'
+        let facingMode = 'user';
         let lastDetectedObjects = new Set();
         let lastAlertTime = {};
         let frameCount = 0;
         let lastFpsUpdate = Date.now();
         let audioCtx = null;
 
-        // Colors palette for bounding boxes
         const colorPalette = [
-            { stroke: '#38bdf8', bg: 'rgba(56, 189, 248, 0.2)' }, // Sky
-            { stroke: '#4ade80', bg: 'rgba(74, 222, 128, 0.2)' }, // Green
-            { stroke: '#f43f5e', bg: 'rgba(244, 63, 94, 0.2)' },  // Rose
-            { stroke: '#a855f7', bg: 'rgba(168, 85, 247, 0.2)' }, // Purple
-            { stroke: '#fbbf24', bg: 'rgba(251, 191, 36, 0.2)' }, // Amber
-            { stroke: '#2dd4bf', bg: 'rgba(45, 212, 191, 0.2)' }  // Teal
+            { stroke: '#38bdf8', bg: 'rgba(56, 189, 248, 0.2)' },
+            { stroke: '#4ade80', bg: 'rgba(74, 222, 128, 0.2)' },
+            { stroke: '#f43f5e', bg: 'rgba(244, 63, 94, 0.2)' },
+            { stroke: '#a855f7', bg: 'rgba(168, 85, 247, 0.2)' },
+            { stroke: '#fbbf24', bg: 'rgba(251, 191, 36, 0.2)' }
         ];
 
-        // Map object class name to consistent color
         function getObjectColor(label) {
             let hash = 0;
-            for (let i = 0; i < label.length; i++) {
-                hash = label.charCodeAt(i) + ((hash << 5) - hash);
-            }
-            const index = Math.abs(hash) % colorPalette.length;
-            return colorPalette[index];
+            for (let i = 0; i < label.length; i++) hash = label.charCodeAt(i) + ((hash << 5) - hash);
+            return colorPalette[Math.abs(hash) % colorPalette.length];
         }
 
-        // Initialize Audio Context for Beep Sound
         function initAudio() {
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
         }
 
-        // Play Beep Sound
         function playBeepSound() {
             if (!audioToggle.checked) return;
             try {
                 initAudio();
-                if (audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
+                if (audioCtx.state === 'suspended') audioCtx.resume();
                 const osc = audioCtx.createOscillator();
                 const gain = audioCtx.createGain();
                 osc.type = 'sine';
-                osc.frequency.setValueAtTime(880, audioCtx.currentTime); // 880Hz (A5)
+                osc.frequency.setValueAtTime(880, audioCtx.currentTime);
                 gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
                 gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.2);
-                
                 osc.connect(gain);
                 gain.connect(audioCtx.destination);
-                
                 osc.start();
                 osc.stop(audioCtx.currentTime + 0.2);
-            } catch (e) {
-                console.warn('Audio play error:', e);
-            }
+            } catch (e) { console.warn(e); }
         }
 
-        // Text-to-Speech Notification
         function speakObject(text) {
-            if (!speechToggle.checked) return;
-            if ('speechSynthesis' in window) {
-                // Cancel existing speech queue to keep real-time feel
-                window.speechSynthesis.cancel();
-                
-                const lang = speechLang.value;
-                let speakText = text;
-
-                if (lang === 'id-ID') {
-                    const translated = translations[text.toLowerCase()] || text;
-                    speakText = `Terdeteksi ${translated}`;
-                } else {
-                    speakText = `Detected ${text}`;
-                }
-
-                const utterance = new SpeechSynthesisUtterance(speakText);
-                utterance.lang = lang;
-                utterance.rate = 1.0;
-                utterance.pitch = 1.0;
-                window.speechSynthesis.speak(utterance);
-            }
+            if (!speechToggle.checked || !('speechSynthesis' in window)) return;
+            window.speechSynthesis.cancel();
+            const translated = translations[text.toLowerCase()] || text;
+            const utterance = new SpeechSynthesisUtterance(`Terdeteksi ${translated}`);
+            utterance.lang = 'id-ID';
+            utterance.rate = 1.0;
+            window.speechSynthesis.speak(utterance);
         }
 
-        // Toast Notification Display
         function showToast(label, score) {
             const translatedLabel = translations[label.toLowerCase()] || label;
             const toast = document.createElement('div');
-            toast.className = 'flex items-center justify-between p-3 rounded-xl bg-slate-800/95 border border-indigo-500/40 text-white shadow-xl backdrop-blur-md transition-all duration-300 transform translate-y-[-10px] opacity-0';
-            
+            toast.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-800/95 border border-indigo-500/40 text-white shadow-xl backdrop-blur-md transition-all duration-300 transform translate-y-[10px] opacity-0 text-xs';
             toast.innerHTML = `
-                <div class="flex items-center gap-3">
-                    <div class="w-8 h-8 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-                        <i class="fa-solid fa-bullseye"></i>
-                    </div>
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-bullseye text-indigo-400"></i>
                     <div>
-                        <h4 class="font-bold text-xs capitalize">${translatedLabel} <span class="text-slate-400 text-[10px]">(${label})</span></h4>
-                        <p class="text-[10px] text-slate-300">Akurasi: ${(score * 100).toFixed(0)}%</p>
+                        <span class="font-bold capitalize">${translatedLabel}</span>
+                        <span class="text-[10px] text-slate-400 font-mono"> (${(score * 100).toFixed(0)}%)</span>
                     </div>
                 </div>
-                <span class="text-[10px] bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full font-mono">Baru</span>
+                <span class="text-[9px] bg-indigo-500/20 text-indigo-300 px-1.5 py-0.5 rounded-full font-mono">NEW</span>
             `;
-
             toastContainer.appendChild(toast);
-
-            // Trigger animation
+            setTimeout(() => toast.classList.remove('translate-y-[10px]', 'opacity-0'), 10);
             setTimeout(() => {
-                toast.classList.remove('translate-y-[-10px]', 'opacity-0');
-            }, 10);
-
-            // Remove toast after 2.5s
-            setTimeout(() => {
-                toast.classList.add('opacity-0', 'translate-y-[-10px]');
+                toast.classList.add('opacity-0', 'translate-y-[10px]');
                 setTimeout(() => toast.remove(), 300);
-            }, 2500);
+            }, 2000);
         }
 
-        // Add Log Entry
         function addLogEntry(label, score) {
             const translatedLabel = translations[label.toLowerCase()] || label;
             const timeStr = new Date().toLocaleTimeString('id-ID', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
             
-            // Remove empty placeholder if present
             if (logContainer.children.length === 1 && logContainer.children[0].classList.contains('italic')) {
                 logContainer.innerHTML = '';
             }
 
             const logItem = document.createElement('div');
-            logItem.className = 'flex justify-between items-center p-2 rounded-lg bg-slate-800/50 border border-slate-700/50 text-[11px] hover:bg-slate-800 transition';
+            logItem.className = 'flex justify-between items-center p-1.5 rounded bg-slate-800/50 border border-slate-700/50 text-[11px]';
             logItem.innerHTML = `
-                <div class="flex items-center gap-2">
-                    <span class="w-1.5 h-1.5 rounded-full bg-indigo-400"></span>
-                    <span class="font-medium text-slate-200 capitalize">${translatedLabel}</span>
-                    <span class="text-slate-500 text-[10px]">(${(score * 100).toFixed(0)}%)</span>
-                </div>
-                <span class="font-mono text-[10px] text-slate-400">${timeStr}</span>
+                <span class="font-medium text-slate-200 capitalize">${translatedLabel} <span class="text-slate-500 text-[9px]">(${(score * 100).toFixed(0)}%)</span></span>
+                <span class="font-mono text-[9px] text-slate-400">${timeStr}</span>
             `;
 
             logContainer.insertBefore(logItem, logContainer.firstChild);
-
-            // Keep max 30 logs
-            if (logContainer.children.length > 30) {
-                logContainer.removeChild(logContainer.lastChild);
-            }
+            if (logContainer.children.length > 20) logContainer.removeChild(logContainer.lastChild);
         }
 
-        // Load TensorFlow COCO-SSD Model
         async function loadAIModel() {
             try {
                 statusText.innerText = "Mengunduh Model COCO-SSD...";
                 model = await cocoSsd.load();
-                
                 statusPill.className = "flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium";
                 statusText.innerText = "Model AI Siap";
-                
-                // Start Webcam
                 startWebcam();
             } catch (err) {
-                console.error("Model Load Error:", err);
+                console.error("Model Error:", err);
                 statusPill.className = "flex items-center gap-2 px-3 py-1.5 rounded-full bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs font-medium";
-                statusText.innerText = "Gagal Memuat AI Model";
+                statusText.innerText = "Gagal Memuat Model";
             }
         }
 
-        // Initialize WebCam Stream
         async function startWebcam() {
             try {
-                const constraints = {
-                    video: {
-                        facingMode: facingMode,
-                        width: { ideal: 1280 },
-                        height: { ideal: 720 }
-                    },
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: facingMode, width: { ideal: 640 }, height: { ideal: 480 } },
                     audio: false
-                };
-
-                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                });
                 video.srcObject = stream;
-
                 video.onloadedmetadata = () => {
                     video.play();
                     videoLoader.classList.add('hidden');
-                    
-                    // Adjust Canvas size to match video aspect ratio
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
-
-                    // Start Detection Loop
+                    thresholdCanvas.width = video.videoWidth;
+                    thresholdCanvas.height = video.videoHeight;
                     requestAnimationFrame(detectFrame);
                 };
             } catch (err) {
-                console.error("Webcam Access Error:", err);
-                videoLoader.innerHTML = `
-                    <i class="fa-solid fa-triangle-exclamation text-rose-500 text-3xl mb-2"></i>
-                    <p class="text-sm text-slate-300 font-medium">Akses Kamera Ditolak / Tidak Ditemukan</p>
-                    <p class="text-xs text-slate-500 max-w-xs text-center">Harap izinkan akses webcam pada browser Anda untuk melanjutkan.</p>
-                `;
+                console.error("Webcam Error:", err);
             }
         }
 
-        // Real-Time Object Detection Loop
+        // Compute Otsu Auto-Threshold Value
+        function calculateOtsuThreshold(grayscaleData) {
+            const histogram = new Array(256).fill(0);
+            const totalPixels = grayscaleData.length;
+
+            for (let i = 0; i < totalPixels; i++) {
+                histogram[grayscaleData[i]]++;
+            }
+
+            let sum = 0;
+            for (let t = 0; t < 256; t++) sum += t * histogram[t];
+
+            let sumB = 0;
+            let wB = 0;
+            let wF = 0;
+            let varMax = 0;
+            let threshold = 128;
+
+            for (let t = 0; t < 256; t++) {
+                wB += histogram[t];
+                if (wB === 0) continue;
+                wF = totalPixels - wB;
+                if (wF === 0) break;
+
+                sumB += t * histogram[t];
+                const mB = sumB / wB;
+                const mF = (sum - sumB) / wF;
+
+                const varBetween = wB * wF * (mB - mF) * (mB - mF);
+                if (varBetween > varMax) {
+                    varMax = varBetween;
+                    threshold = t;
+                }
+            }
+            return threshold;
+        }
+
+        // Apply Image Thresholding / Background Separation Filter
+        function processThresholding() {
+            const mode = threshMode.value;
+            if (mode === 'none') {
+                threshCtx.drawImage(video, 0, 0, thresholdCanvas.width, thresholdCanvas.height);
+                currentThreshVal.innerText = 'OFF';
+                return;
+            }
+
+            // Draw current video frame to threshold canvas
+            threshCtx.drawImage(video, 0, 0, thresholdCanvas.width, thresholdCanvas.height);
+            const frame = threshCtx.getImageData(0, 0, thresholdCanvas.width, thresholdCanvas.height);
+            const data = frame.data;
+            const length = data.length;
+
+            let cutoff = parseInt(threshSlider.value);
+            const isInverted = invertToggle.checked;
+
+            // Extract Grayscale Array for Otsu
+            if (mode === 'otsu') {
+                const grayArr = new Uint8Array(length / 4);
+                for (let i = 0; i < length; i += 4) {
+                    grayArr[i / 4] = Math.round(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+                }
+                cutoff = calculateOtsuThreshold(grayArr);
+                currentThreshVal.innerText = `${cutoff} (Auto)`;
+            } else {
+                currentThreshVal.innerText = cutoff;
+            }
+
+            // Process Pixels
+            for (let i = 0; i < length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+                
+                // Grayscale Intensity (Luminance)
+                const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+                if (mode === 'binary' || mode === 'otsu') {
+                    let val = gray >= cutoff ? 255 : 0;
+                    if (isInverted) val = 255 - val;
+                    data[i] = val;     // R
+                    data[i + 1] = val; // G
+                    data[i + 2] = val; // B
+                } 
+                else if (mode === 'foreground') {
+                    // Retain RGB color if above threshold, otherwise set to black background
+                    const isForeground = gray >= cutoff;
+                    const showPixel = isInverted ? !isForeground : isForeground;
+                    
+                    if (!showPixel) {
+                        data[i] = 0;
+                        data[i + 1] = 0;
+                        data[i + 2] = 0;
+                    }
+                }
+                else if (mode === 'hsv') {
+                    // Simple Color Masking (Isolate distinct hues/brightness)
+                    const max = Math.max(r, g, b);
+                    const min = Math.min(r, g, b);
+                    const diff = max - min;
+
+                    let passFilter = gray >= cutoff && diff > 20;
+                    if (isInverted) passFilter = !passFilter;
+
+                    data[i] = passFilter ? r : 0;
+                    data[i + 1] = passFilter ? g : 0;
+                    data[i + 2] = passFilter ? b : 0;
+                }
+            }
+
+            threshCtx.putImageData(frame, 0, 0);
+        }
+
+        // Main Detection & Render Loop
         async function detectFrame() {
             if (!isDetecting) {
                 requestAnimationFrame(detectFrame);
@@ -538,11 +538,17 @@
                 lastFpsUpdate = now;
             }
 
+            // 1. Process Thresholding Image Filter
+            if (video.readyState === 4) {
+                processThresholding();
+            }
+
+            // 2. Perform AI Object Detection
             if (model && video.readyState === 4) {
-                // Perform object detection
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
                 const predictions = await model.detect(video);
                 
-                // Clear Canvas
+                // Clear bounding box overlay
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
 
                 const filterValue = targetFilter.value;
@@ -553,7 +559,6 @@
                     const score = prediction.score;
                     const label = prediction.class;
 
-                    // Filter based on user confidence threshold & object type selection
                     if (score >= minConfidence && (filterValue === 'all' || label.toLowerCase() === filterValue)) {
                         validCount++;
                         currentDetectedSet.add(label);
@@ -562,42 +567,32 @@
                         const color = getObjectColor(label);
                         const translatedLabel = translations[label.toLowerCase()] || label;
 
-                        // 1. Draw Bounding Box
+                        // Draw Box
                         ctx.strokeStyle = color.stroke;
                         ctx.lineWidth = 3;
                         ctx.beginPath();
                         ctx.roundRect(x, y, width, height, 8);
                         ctx.stroke();
 
-                        // Fill translucent background inside box
                         ctx.fillStyle = color.bg;
                         ctx.fill();
 
-                        // 2. Draw Label & Score Pill
-                        const text = `${translatedLabel} (${Math.round(score * 100)}%)`;
-                        ctx.font = 'bold 14px "Plus Jakarta Sans", sans-serif';
+                        // Draw Text Pill
+                        const text = `${translatedLabel} ${Math.round(score * 100)}%`;
+                        ctx.font = 'bold 13px "Plus Jakarta Sans", sans-serif';
                         const textWidth = ctx.measureText(text).width;
-                        const textHeight = 22;
 
-                        // Label Background
                         ctx.fillStyle = color.stroke;
                         ctx.beginPath();
-                        ctx.roundRect(x, y > textHeight + 5 ? y - textHeight - 4 : y, textWidth + 16, textHeight, 6);
+                        ctx.roundRect(x, y > 25 ? y - 24 : y, textWidth + 14, 22, 6);
                         ctx.fill();
 
-                        // Label Text (Text is flipped back horizontally using canvas scale to offset mirror video)
                         ctx.fillStyle = '#0f172a';
-                        ctx.save();
-                        // Mirror fix for canvas text label rendering
-                        const textX = x + 8;
-                        const textY = y > textHeight + 5 ? y - 8 : y + 15;
-                        
-                        ctx.fillText(text, textX, textY);
-                        ctx.restore();
+                        ctx.fillText(text, x + 7, y > 25 ? y - 8 : y + 15);
 
-                        // 3. Trigger Notification Logic for newly detected objects
+                        // Trigger Alerts
                         const timeSinceLastAlert = now - (lastAlertTime[label] || 0);
-                        if (!lastDetectedObjects.has(label) || timeSinceLastAlert > 5000) { // Throttle notification per object type 5s
+                        if (!lastDetectedObjects.has(label) || timeSinceLastAlert > 5000) {
                             lastAlertTime[label] = now;
                             showToast(label, score);
                             addLogEntry(label, score);
@@ -607,18 +602,14 @@
                     }
                 });
 
-                // Update Active Object Tags in UI
                 updateActiveTags(currentDetectedSet);
                 objectCount.innerText = validCount;
-
-                // Update tracked objects state
                 lastDetectedObjects = currentDetectedSet;
             }
 
             requestAnimationFrame(detectFrame);
         }
 
-        // Render Active Detection Tags
         function updateActiveTags(objectSet) {
             if (objectSet.size === 0) {
                 activeTags.innerHTML = `<span class="text-xs text-slate-500 italic">Belum ada objek terdeteksi...</span>`;
@@ -635,20 +626,31 @@
                 tag.style.borderColor = color.stroke;
                 tag.style.backgroundColor = color.bg;
                 tag.style.color = '#f8fafc';
-                
                 tag.innerHTML = `<i class="fa-solid fa-circle text-[8px]" style="color: ${color.stroke}"></i> ${translatedLabel}`;
                 activeTags.appendChild(tag);
             });
         }
 
-        // Event Listeners for UI Controls
+        // Event Listeners
+        threshMode.addEventListener('change', (e) => {
+            if (e.target.value === 'otsu') {
+                thresholdSliderGroup.classList.add('opacity-50', 'pointer-events-none');
+            } else {
+                thresholdSliderGroup.classList.remove('opacity-50', 'pointer-events-none');
+            }
+        });
+
+        threshSlider.addEventListener('input', (e) => {
+            sliderVal.innerText = e.target.value;
+        });
+
         thresholdInput.addEventListener('input', (e) => {
             minConfidence = e.target.value / 100;
             thresholdValue.innerText = `${e.target.value}%`;
         });
 
         clearLogBtn.addEventListener('click', () => {
-            logContainer.innerHTML = `<div class="text-slate-500 italic text-center py-4">Belum ada riwayat deteksi</div>`;
+            logContainer.innerHTML = `<div class="text-slate-500 italic text-center py-3 text-[11px]">Belum ada deteksi...</div>`;
         });
 
         toggleCameraBtn.addEventListener('click', () => {
@@ -656,31 +658,23 @@
             const icon = toggleCameraBtn.querySelector('i');
             if (isDetecting) {
                 icon.className = 'fa-solid fa-pause';
-                toggleCameraBtn.classList.remove('bg-emerald-600');
-                toggleCameraBtn.classList.add('bg-slate-800/80');
+                toggleText.innerText = 'Pause';
             } else {
                 icon.className = 'fa-solid fa-play';
-                toggleCameraBtn.classList.add('bg-emerald-600');
-                toggleCameraBtn.classList.remove('bg-slate-800/80');
+                toggleText.innerText = 'Mulai';
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
             }
         });
 
         switchCameraBtn.addEventListener('click', async () => {
             facingMode = (facingMode === 'user') ? 'environment' : 'user';
-            if (video.srcObject) {
-                video.srcObject.getTracks().forEach(track => track.stop());
-            }
+            if (video.srcObject) video.srcObject.getTracks().forEach(track => track.stop());
             videoLoader.classList.remove('hidden');
             startWebcam();
         });
 
-        // Initialize Audio Context on user first click/interaction (Browser Policy Requirement)
-        document.body.addEventListener('click', () => {
-            initAudio();
-        }, { once: true });
+        document.body.addEventListener('click', () => initAudio(), { once: true });
 
-        // Start App on Window Load
         window.onload = () => {
             loadAIModel();
         };
