@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Deteksi Wajah & Pra-Pemrosesan Citra OpenCV.js</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0f172a;
+            color: #f8fafc;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1e293b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #475569;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #64748b;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+    <!-- Header Navigation -->
+    <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-50 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-3">
+                <div class="bg-indigo-600 p-2 rounded-lg text-white">
+                    <i class="fa-solid me-1 fa-eye text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="text-lg font-bold text-white tracking-wide">VisionLab <span class="text-xs bg-indigo-500/30 text-indigo-300 border border-indigo-500/50 px-2 py-0.5 rounded-full ml-1">OpenCV.js</span></h1>
+                    <p class="text-xs text-slate-400">Deteksi Wajah Real-Time & Pengolahan Citra Digital</p>
+                </div>
+            </div>
+            
+            <div id="statusBadge" class="flex items-center space-x-2 bg-amber-500/10 border border-amber-500/30 text-amber-400 px-3 py-1.5 rounded-full text-xs font-medium">
+                <i class="fa-solid fa-spinner fa-spin"></i>
+                <span>Memuat OpenCV.js...</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Grid -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+        <!-- Control Panel Sidebar -->
+        <aside class="lg:col-span-1 bg-slate-900/80 backdrop-blur border border-slate-800 rounded-2xl p-5 flex flex-col space-y-6 h-fit">
+            <div class="border-b border-slate-800 pb-3 flex justify-between items-center">
+                <h2 class="font-semibold text-slate-200 text-base flex items-center gap-2">
+                    <i class="fa-solid fa-sliders text-indigo-400"></i> Control Panel
+                </h2>
+                <button id="btnWebcam" class="bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white text-xs font-medium px-3 py-2 rounded-lg transition flex items-center gap-2 shadow-lg shadow-indigo-600/20" disabled>
+                    <i class="fa-solid fa-camera"></i> Start Webcam
+                </button>
+            </div>
+
+            <!-- Pre-processing Pipeline Controls -->
+            <div class="space-y-4">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">1. Pra-Pemrosesan Citra</h3>
+                
+                <!-- Grayscale Toggle -->
+                <div class="flex items-center justify-between bg-slate-800/50 p-3 rounded-xl border border-slate-800">
+                    <label for="grayscaleToggle" class="text-sm font-medium text-slate-300">Konversi Grayscale</label>
+                    <input type="checkbox" id="grayscaleToggle" class="w-4 h-4 accent-indigo-600 rounded cursor-pointer" checked>
+                </div>
+
+                <!-- Thresholding Selection -->
+                <div class="space-y-2 bg-slate-800/50 p-3 rounded-xl border border-slate-800">
+                    <label class="text-xs font-semibold text-slate-300 block">Metode Thresholding</label>
+                    <select id="thresholdMode" class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <option value="none">None (Tanpa Threshold)</option>
+                        <option value="binary">Binary Threshold</option>
+                        <option value="otsu">Otsu Thresholding</option>
+                        <option value="adaptive">Adaptive Thresholding</option>
+                    </select>
+
+                    <div id="thresholdValueContainer" class="mt-3 space-y-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Nilai Threshold</span>
+                            <span id="threshValDisp" class="font-mono text-indigo-400">127</span>
+                        </div>
+                        <input type="range" id="thresholdValue" min="0" max="255" value="127" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+                </div>
+
+                <!-- Morphology Selection -->
+                <div class="space-y-3 bg-slate-800/50 p-3 rounded-xl border border-slate-800">
+                    <label class="text-xs font-semibold text-slate-300 block">Operasi Morfologi</label>
+                    <select id="morphMode" class="w-full bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 outline-none">
+                        <option value="none">None (Tanpa Morfologi)</option>
+                        <option value="erode">Erosion (Erosi)</option>
+                        <option value="dilate">Dilation (Dilasi)</option>
+                        <option value="open">Opening (Pembukaan)</option>
+                        <option value="close">Closing (Penutupan)</option>
+                    </select>
+
+                    <div class="space-y-1 pt-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Ukuran Kernel</span>
+                            <span id="kernelValDisp" class="font-mono text-indigo-400">3 x 3</span>
+                        </div>
+                        <input type="range" id="kernelSize" min="1" max="15" step="2" value="3" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Face Detection Controls -->
+            <div class="space-y-4 pt-2 border-t border-slate-800">
+                <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">2. Haar Cascade Classifier</h3>
+
+                <div class="space-y-3 bg-slate-800/50 p-3 rounded-xl border border-slate-800">
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Scale Factor</span>
+                            <span id="scaleFactorDisp" class="font-mono text-indigo-400">1.10</span>
+                        </div>
+                        <input type="range" id="scaleFactor" min="1.05" max="1.5" step="0.05" value="1.1" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-slate-400">
+                            <span>Min Neighbors</span>
+                            <span id="minNeighborsDisp" class="font-mono text-indigo-400">3</span>
+                        </div>
+                        <input type="range" id="minNeighbors" min="1" max="10" step="1" value="3" class="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info Stats -->
+            <div class="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 flex justify-between items-center text-xs text-slate-400">
+                <span>Kecepatan Deteksi:</span>
+                <span id="fpsDisplay" class="font-mono text-emerald-400 font-bold">0 FPS</span>
+            </div>
+        </aside>
+
+        <!-- Canvas Visualizations Area -->
+        <section class="lg:col-span-2 space-y-6 flex flex-col">
+            
+            <!-- Hidden original video element -->
+            <video id="webcamVideo" class="hidden" autoplay playsinline muted></video>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
+                
+                <!-- Processed Image Output -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-lg">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                            <i class="fa-solid fa-microchip text-indigo-400"></i> Pre-processed Stream
+                        </h3>
+                        <span class="text-[10px] bg-slate-800 text-slate-400 px-2 py-0.5 rounded">Filter View</span>
+                    </div>
+                    <div class="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
+                        <canvas id="canvasProcessed" class="w-full h-full object-contain"></canvas>
+                        <div id="processedPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-600 text-xs">
+                            <i class="fa-solid fa-image text-2xl mb-2"></i>
+                            <span>Menunggu Webcam...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Detection Output -->
+                <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-lg">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-xs font-semibold text-slate-300 flex items-center gap-2">
+                            <i class="fa-solid fa-user-check text-emerald-400"></i> Deteksi Wajah (Bounding Box)
+                        </h3>
+                        <span class="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded">Result</span>
+                    </div>
+                    <div class="relative w-full aspect-video bg-slate-950 rounded-xl overflow-hidden flex items-center justify-center border border-slate-800">
+                        <canvas id="canvasOutput" class="w-full h-full object-contain"></canvas>
+                        <div id="outputPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center text-slate-600 text-xs">
+                            <i class="fa-solid fa-video text-2xl mb-2"></i>
+                            <span>Menunggu Webcam...</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Technical Explanation Footer Card -->
+            <div class="bg-slate-900/60 border border-slate-800 rounded-2xl p-4 text-xs text-slate-400 space-y-2">
+                <div class="font-semibold text-slate-300 flex items-center gap-2">
+                    <i class="fa-solid fa-circle-info text-indigo-400"></i> Cara Kerja & Ringkasan Pipeline:
+                </div>
+                <p class="leading-relaxed">
+                    1. <strong class="text-slate-200">Pre-processing:</strong> Frame webcam diubah ke Grayscale, lalu diterapkan <span class="text-indigo-300">Thresholding</span> (Binary/Otsu/Adaptive) dan <span class="text-indigo-300">Morfologi</span> (Erosi/Dilasi/Opening/Closing) untuk reduksi noise/ekstraksi kontur.
+                </p>
+                <p class="leading-relaxed">
+                    2. <strong class="text-slate-200">Face Detection:</strong> Algoritma <span class="text-emerald-300">Haar Cascade Classifier</span> memproses citra grayscale untuk mengidentifikasi fitur struktur wajah dan menggambar bounding box secara otomatis.
+                </p>
+            </div>
+
+        </section>
+
+    </main>
+
+    <!-- Async Loading OpenCV.js -->
+    <script>
+        // Global variables & state
+        let isCvReady = false;
+        let isStreaming = false;
+        let video = null;
+        let classifier = null;
+        let stream = null;
+
+        // Canvas Elements
+        let canvasProcessed = null;
+        let canvasOutput = null;
+
+        // OpenCV Mat objects
+        let src = null;
+        let gray = null;
+        let processedMat = null;
+        let faces = null;
+
+        // UI Controls
+        const btnWebcam = document.getElementById('btnWebcam');
+        const statusBadge = document.getElementById('statusBadge');
+        const grayscaleToggle = document.getElementById('grayscaleToggle');
+        const thresholdMode = document.getElementById('thresholdMode');
+        const thresholdValue = document.getElementById('thresholdValue');
+        const threshValDisp = document.getElementById('threshValDisp');
+        const morphMode = document.getElementById('morphMode');
+        const kernelSize = document.getElementById('kernelSize');
+        const kernelValDisp = document.getElementById('kernelValDisp');
+        const scaleFactor = document.getElementById('scaleFactor');
+        const scaleFactorDisp = document.getElementById('scaleFactorDisp');
+        const minNeighbors = document.getElementById('minNeighbors');
+        const minNeighborsDisp = document.getElementById('minNeighborsDisp');
+        const fpsDisplay = document.getElementById('fpsDisplay');
+
+        // Performance / FPS tracking
+        let lastTime = Date.now();
+        let frameCount = 0;
+
+        // Callback when OpenCV.js is fully loaded
+        function onOpenCvReady() {
+            cv['onRuntimeInitialized'] = () => {
+                loadHaarCascade();
+            };
+        }
+
+        // Fetch and load the Haar Cascade XML File into Virtual FS of Emscripten
+        async function loadHaarCascade() {
+            const cascadeUrl = 'https://raw.githubusercontent.com/opencv/opencv/master/data/haarcascades/haarcascade_frontalface_default.xml';
+            try {
+                const response = await fetch(cascadeUrl);
+                const buffer = await response.arrayBuffer();
+                const data = new Uint8Array(buffer);
+                
+                // Save XML file to Virtual File System (Emscripten FS)
+                cv.FS_createDataFile('/', 'haarcascade_frontalface_default.xml', data, true, false, false);
+
+                // Instantiate Classifier
+                classifier = new cv.CascadeClassifier();
+                classifier.load('haarcascade_frontalface_default.xml');
+
+                isCvReady = true;
+                statusBadge.className = "flex items-center space-x-2 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 px-3 py-1.5 rounded-full text-xs font-medium";
+                statusBadge.innerHTML = `<i class="fa-solid fa-check-circle"></i><span>OpenCV.js Ready</span>`;
+                btnWebcam.disabled = false;
+            } catch (err) {
+                console.error("Gagal memuat Haar Cascade Classifier XML: ", err);
+                statusBadge.className = "flex items-center space-x-2 bg-rose-500/10 border border-rose-500/30 text-rose-400 px-3 py-1.5 rounded-full text-xs font-medium";
+                statusBadge.innerHTML = `<i class="fa-solid fa-triangle-exclamation"></i><span>Gagal Memuat XML</span>`;
+            }
+        }
+
+        // Initialize UI Elements & Event Listeners
+        window.onload = () => {
+            video = document.getElementById('webcamVideo');
+            canvasProcessed = document.getElementById('canvasProcessed');
+            canvasOutput = document.getElementById('canvasOutput');
+
+            // Slider input update events
+            thresholdValue.addEventListener('input', (e) => threshValDisp.textContent = e.target.value);
+            kernelSize.addEventListener('input', (e) => {
+                const val = e.target.value;
+                kernelValDisp.textContent = `${val} x ${val}`;
+            });
+            scaleFactor.addEventListener('input', (e) => scaleFactorDisp.textContent = parseFloat(e.target.value).toFixed(2));
+            minNeighbors.addEventListener('input', (e) => minNeighborsDisp.textContent = e.target.value);
+
+            // Webcam toggle listener
+            btnWebcam.addEventListener('click', toggleWebcam);
+        };
+
+        // Start / Stop Webcam Stream
+        async function toggleWebcam() {
+            if (isStreaming) {
+                stopWebcam();
+            } else {
+                await startWebcam();
+            }
+        }
+
+        async function startWebcam() {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+                video.srcObject = stream;
+                await video.play();
+
+                isStreaming = true;
+                btnWebcam.innerHTML = `<i class="fa-solid fa-stop"></i> Stop Webcam`;
+                btnWebcam.classList.replace('bg-indigo-600', 'bg-rose-600');
+                btnWebcam.classList.replace('hover:bg-indigo-500', 'hover:bg-rose-500');
+
+                document.getElementById('processedPlaceholder').classList.add('hidden');
+                document.getElementById('outputPlaceholder').classList.add('hidden');
+
+                // Initialize OpenCV Matrices based on video size
+                canvasProcessed.width = video.videoWidth;
+                canvasProcessed.height = video.videoHeight;
+                canvasOutput.width = video.videoWidth;
+                canvasOutput.height = video.videoHeight;
+
+                src = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC4);
+                gray = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC1);
+                processedMat = new cv.Mat(video.videoHeight, video.videoWidth, cv.CV_8UC1);
+                faces = new cv.RectVector();
+
+                // Trigger main loop
+                requestAnimationFrame(processVideoFrame);
+            } catch (err) {
+                console.error("Gagal mengakses webcam: ", err);
+                alert("Gagal mengakses Webcam! Pastikan memberikan izin akses browser.");
+            }
+        }
+
+        function stopWebcam() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            isStreaming = false;
+            btnWebcam.innerHTML = `<i class="fa-solid fa-camera"></i> Start Webcam`;
+            btnWebcam.classList.replace('bg-rose-600', 'bg-indigo-600');
+            btnWebcam.classList.replace('hover:bg-rose-500', 'hover:bg-indigo-500');
+
+            // Free allocated Mat objects
+            if (src) src.delete();
+            if (gray) gray.delete();
+            if (processedMat) processedMat.delete();
+            if (faces) faces.delete();
+
+            document.getElementById('processedPlaceholder').classList.remove('hidden');
+            document.getElementById('outputPlaceholder').classList.remove('hidden');
+            fpsDisplay.textContent = "0 FPS";
+        }
+
+        // Main processing loop per frame
+        function processVideoFrame() {
+            if (!isStreaming) return;
+
+            const startTime = Date.now();
+
+            // 1. Capture current frame from Video element into src Mat
+            const context = canvasOutput.getContext('2d');
+            context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+            let imgData = context.getImageData(0, 0, video.videoWidth, video.videoHeight);
+            src.data.set(imgData.data);
+
+            // 2. Grayscale Conversion
+            cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+
+            // Copy base grayscale to processedMat
+            gray.copyTo(processedMat);
+
+            // 3. Thresholding Pipeline
+            const tMode = thresholdMode.value;
+            const tVal = parseFloat(thresholdValue.value);
+
+            if (tMode === 'binary') {
+                cv.threshold(processedMat, processedMat, tVal, 255, cv.THRESH_BINARY);
+            } else if (tMode === 'otsu') {
+                cv.threshold(processedMat, processedMat, 0, 255, cv.THRESH_BINARY | cv.THRESH_OTSU);
+            } else if (tMode === 'adaptive') {
+                cv.adaptiveThreshold(processedMat, processedMat, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+            }
+
+            // 4. Morphology Pipeline
+            const mMode = morphMode.value;
+            const kSize = parseInt(kernelSize.value);
+            
+            if (mMode !== 'none') {
+                let M = cv.Mat.ones(kSize, kSize, cv.CV_8U);
+                let anchor = new cv.Point(-1, -1);
+
+                if (mMode === 'erode') {
+                    cv.erode(processedMat, processedMat, M, anchor, 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+                } else if (mMode === 'dilate') {
+                    cv.dilate(processedMat, processedMat, M, anchor, 1, cv.BORDER_CONSTANT, cv.morphologyDefaultBorderValue());
+                } else if (mMode === 'open') {
+                    cv.morphologyEx(processedMat, processedMat, cv.MORPH_OPEN, M);
+                } else if (mMode === 'close') {
+                    cv.morphologyEx(processedMat, processedMat, cv.MORPH_CLOSE, M);
+                }
+                M.delete();
+            }
+
+            // Render Processed Mat onto Processed Canvas
+            if (grayscaleToggle.checked || tMode !== 'none' || mMode !== 'none') {
+                cv.imshow('canvasProcessed', processedMat);
+            } else {
+                cv.imshow('canvasProcessed', src);
+            }
+
+            // 5. Face Detection with Haar Cascade
+            const sFactor = parseFloat(scaleFactor.value);
+            const mNeighbors = parseInt(minNeighbors.value);
+            
+            // Detect faces on Grayscale image
+            classifier.detectMultiScale(gray, faces, sFactor, mNeighbors, 0);
+
+            // Render Original Frame on Canvas Output
+            cv.imshow('canvasOutput', src);
+
+            // Draw bounding boxes for detected faces
+            const ctxOutput = canvasOutput.getContext('2d');
+            ctxOutput.lineWidth = 3;
+            ctxOutput.strokeStyle = '#10b981'; // Tailwind Emerald 500
+            ctxOutput.fillStyle = '#10b981';
+
+            for (let i = 0; i < faces.size(); ++i) {
+                let face = faces.get(i);
+                // Draw Rectangle
+                ctxOutput.beginPath();
+                ctxOutput.rect(face.x, face.y, face.width, face.height);
+                ctxOutput.stroke();
+
+                // Draw Label Badge
+                ctxOutput.fillRect(face.x, Math.max(0, face.y - 22), 80, 22);
+                ctxOutput.fillStyle = '#ffffff';
+                ctxOutput.font = '12px Inter, sans-serif';
+                ctxOutput.fillText('Wajah', face.x + 8, Math.max(14, face.y - 6));
+                ctxOutput.fillStyle = '#10b981'; // Reset fill color
+            }
+
+            // Calculate FPS
+            frameCount++;
+            const now = Date.now();
+            if (now - lastTime >= 1000) {
+                fpsDisplay.textContent = `${frameCount} FPS`;
+                frameCount = 0;
+                lastTime = now;
+            }
+
+            // Request next animation frame
+            requestAnimationFrame(processVideoFrame);
+        }
+    </script>
+
+    <!-- Load OpenCV.js asynchronously -->
+    <script async src="https://docs.opencv.org/4.7.0/opencv.js" onload="onOpenCvReady()"></script>
+</body>
+</html>
