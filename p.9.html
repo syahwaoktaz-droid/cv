@@ -65,24 +65,34 @@
         </table>
     </div>
 </div>
-<!-- Memuat OpenCV.js -->
-<script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
+
 <script>
-    let imgLoadedA = false, imgLoadedB = false;
-    function onOpenCvReady() {
-        cv['onRuntimeInitialized'] = () => {
-            const status = document.getElementById('status');
-            status.textContent = 'OpenCV.js Siap! Silakan unggah kedua gambar wajah.';
-            status.classList.add('ready');
-            document.getElementById('inputA').disabled = false;
-            document.getElementById('inputB').disabled = false;
-        };
+    let imgLoadedA = false, imgLoadedB = false, cvReady = false;
+
+    function cekSiapVerifikasi() {
+        if (imgLoadedA && imgLoadedB && cvReady) {
+            document.getElementById('btnVerify').disabled = false;
+        }
     }
-    // Update tampilan slider ambang batas
+
+    function onOpenCvReady() {
+        if (typeof cv !== 'undefined') {
+            cv['onRuntimeInitialized'] = () => {
+                cvReady = true;
+                const status = document.getElementById('status');
+                status.textContent = 'OpenCV.js Siap! Silakan unggah kedua gambar wajah.';
+                status.classList.add('ready');
+                document.getElementById('inputA').disabled = false;
+                document.getElementById('inputB').disabled = false;
+                cekSiapVerifikasi();
+            };
+        }
+    }
+
     document.getElementById('threshold').addEventListener('input', (e) => {
         document.getElementById('threshVal').textContent = parseFloat(e.target.value).toFixed(2);
     });
-    // Helper memuat gambar ke canvas dengan optimasi ukuran (Kompresi Resolusi)
+
     function loadImageToCanvas(inputElement, canvasId, flagSetter) {
         inputElement.addEventListener('change', (e) => {
             const file = e.target.files[0];
@@ -91,65 +101,86 @@
             img.onload = () => {
                 const canvas = document.getElementById(canvasId);
                 const ctx = canvas.getContext('2d');
-                // Optimasi: Resize ke dimensi standar 200x200 agar ekstraksi fitur cepat & konsisten
                 canvas.width = 200;
                 canvas.height = 200;
                 ctx.drawImage(img, 0, 0, 200, 200);
                 flagSetter();
-                if (imgLoadedA && imgLoadedB) {
-                    document.getElementById('btnVerify').disabled = false;
-                }
+                cekSiapVerifikasi();
             };
             img.src = URL.createObjectURL(file);
         });
     }
+
     loadImageToCanvas(document.getElementById('inputA'), 'canvasA', () => imgLoadedA = true);
     loadImageToCanvas(document.getElementById('inputB'), 'canvasB', () => imgLoadedB = true);
-    /**
-     * MODUL EKSTRAKSI DESKRIPTOR OBJEK (Sesuai Materi P9)
-     */
+
+    // Perhitungan 7 Momen Hu langsung dari cv.moments (aman dari bug cv.HuMoments)
+    function hitungHuMoments(m) {
+        const n20 = m.nu20, n02 = m.nu02, n11 = m.nu11;
+        const n30 = m.nu30, n12 = m.nu12, n21 = m.nu21, n03 = m.nu03;
+
+        const h1 = n20 + n02;
+        const h2 = Math.pow(n20 - n02, 2) + 4 * Math.pow(n11, 2);
+        const h3 = Math.pow(n30 - 3 * n12, 2) + Math.pow(3 * n21 - n03, 2);
+        const h4 = Math.pow(n30 + n12, 2) + Math.pow(n21 + n03, 2);
+        const h5 = (n30 - 3 * n12) * (n30 + n12) * (Math.pow(n30 + n12, 2) - 3 * Math.pow(n21 + n03, 2)) +
+                   (3 * n21 - n03) * (n21 + n03) * (3 * Math.pow(n30 + n12, 2) - Math.pow(n21 + n03, 2));
+        const h6 = (n20 - n02) * (Math.pow(n30 + n12, 2) - Math.pow(n21 + n03, 2)) +
+                   4 * n11 * (n30 + n12) * (n21 + n03);
+        const h7 = (3 * n21 - n03) * (n30 + n12) * (Math.pow(n30 + n12, 2) - 3 * Math.pow(n21 + n03, 2)) -
+                   (n30 - 3 * n12) * (n21 + n03) * (3 * Math.pow(n30 + n12, 2) - Math.pow(n21 + n03, 2));
+
+        return [h1, h2, h3, h4, h5, h6, h7].map(val =>
+            val !== 0 ? -Math.sign(val) * Math.log10(Math.abs(val)) : 0
+        );
+    }
+
     function ekstrakFiturObjek(canvasId) {
         let src = cv.imread(canvasId);
         let rgb = new cv.Mat();
         let gray = new cv.Mat();
         
-        // Optimasi Pencahayaan: Konversi ke RGB & Grayscale + GaussianBlur untuk kurangi noise
         cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
         cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
-        // 1. DESKRIPTOR WARNA: Histogram RGB (3 x 64 bins terkompresi agar ringkas)
+
+        // 1. Histogram RGB (3 x 64 bins)
         let channels = new cv.MatVector();
         cv.split(rgb, channels);
         let histVec = [];
-        let histSize = [64]; // Kompresi dari 256 ke 64 bin untuk efisiensi vektor
+        let histSize = [64];
         let ranges = [0, 256];
         let mask = new cv.Mat();
+
         for (let c = 0; c < 3; c++) {
             let hist = new cv.Mat();
             let chVec = new cv.MatVector();
             chVec.push_back(channels.get(c));
             cv.calcHist(chVec, [0], mask, hist, histSize, ranges, false);
-            cv.normalize(hist, hist, 1, 0, cv.NORM_L2); // Normalisasi L2
+            cv.normalize(hist, hist, 1, 0, cv.NORM_L2);
             for (let i = 0; i < 64; i++) {
                 histVec.push(hist.floatAt(i, 0));
             }
             hist.delete();
             chVec.delete();
         }
-        // 2. DESKRIPTOR BENTUK & KONTUR + MOMEN HU
+
+        // 2. Kontur & Momen Hu
         let binary = new cv.Mat();
         cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
         let contours = new cv.MatVector();
         let hierarchy = new cv.Mat();
         cv.findContours(binary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
-        // Cari kontur terbesar (asumsi area wajah utama)
+
         let maxArea = 0, maxIdx = -1;
         for (let i = 0; i < contours.size(); i++) {
             let area = cv.contourArea(contours.get(i));
             if (area > maxArea) { maxArea = area; maxIdx = i; }
         }
+
         let huVec = new Array(7).fill(0);
         let bentukInfo = { luas: 0, keliling: 0, rasioAspek: 0 };
+
         if (maxIdx !== -1) {
             let konturUtama = contours.get(maxIdx);
             let keliling = cv.arcLength(konturUtama, true);
@@ -159,80 +190,9 @@
                 keliling: keliling.toFixed(1),
                 rasioAspek: (rect.width / rect.height).toFixed(2)
             };
-            // Hitung 7 Momen Hu & Transformasi Logaritmik agar skala seimbang
+
             let momen = cv.moments(konturUtama, false);
-            let hu = new cv.Mat();
-            cv.HuMoments(momen, hu);
-            for (let i = 0; i < 7; i++) {
-                let val = hu.doubleAt(i, 0);
-                // Log transform standar untuk menstabilkan rentang nilai Momen Hu
-                huVec[i] = val !== 0 ? -Math.sign(val) * Math.log10(Math.abs(val)) : 0;
-            }
-            hu.delete();
+            huVec = hitungHuMoments(momen);
         }
-        // Bersihkan memori OpenCV (Wajib untuk mencegah memory leak)
-        src.delete(); rgb.delete(); gray.delete(); channels.delete();
-        mask.delete(); binary.delete(); contours.delete(); hierarchy.delete();
-        return { histVec, huVec, bentukInfo };
-    }
-    /**
-     * MODUL VERIFIKASI (vision-core/verify)
-     * Menghitung Normalized Cross-Correlation (NCC)
-     */
-    function ncc(vecA, vecB) {
-        let dot = 0, normA = 0, normB = 0;
-        for (let i = 0; i < vecA.length; i++) {
-            dot += vecA[i] * vecB[i];
-            normA += vecA[i] * vecA[i];
-            normB += vecB[i] * vecB[i];
-        }
-        if (normA === 0 || normB === 0) return 0;
-        return dot / (Math.sqrt(normA) * Math.sqrt(normB));
-    }
-    function verifikasiWajah(fiturA, fiturB, ambang) {
-        const skorWarna = ncc(fiturA.histVec, fiturB.histVec);
-        const skorBentuk = ncc(fiturA.huVec, fiturB.huVec);
-        
-        // Penggabungan fitur (Feature Fusion): 60% Warna + 40% Bentuk (Momen Hu)
-        const skorGabungan = (0.6 * skorWarna) + (0.4 * skorBentuk);
-        const keputusan = skorGabungan >= ambang ? 'COCOK' : 'TIDAK COCOK';
-        return { skorWarna, skorBentuk, skorGabungan, keputusan };
-    }
-    // Eksekusi saat tombol diklik
-    document.getElementById('btnVerify').addEventListener('click', () => {
-        const ambang = parseFloat(document.getElementById('threshold').value);
-        const fiturA = ekstrakFiturObjek('canvasA');
-        const fiturB = ekstrakFiturObjek('canvasB');
-        const hasil = verifikasiWajah(fiturA, fiturB, ambang);
-        const box = document.getElementById('resultBox');
-        const decisionText = document.getElementById('decisionText');
-        const scoreDetail = document.getElementById('scoreDetail');
-        const tbody = document.getElementById('metricsBody');
-        box.style.display = 'block';
-        box.className = 'result-box ' + (hasil.keputusan === 'COCOK' ? 'match' : 'no-match');
-        decisionText.textContent = `Keputusan Verifikasi: ${hasil.keputusan}`;
-        scoreDetail.innerHTML = `<strong>Skor Kemiripan Gabungan:</strong> ${hasil.skorGabungan.toFixed(4)} (Ambang Batas: ${ambang.toFixed(2)})`;
-        tbody.innerHTML = `
-            <tr>
-                <td><strong>Histogram Warna (RGB 192-dim)</strong></td>
-                <td>Vektor 192 fitur ternormalisasi</td>
-                <td>Vektor 192 fitur ternormalisasi</td>
-                <td><strong>${hasil.skorWarna.toFixed(4)}</strong></td>
-            </tr>
-            <tr>
-                <td><strong>Momen Hu (7 Nilai Invarian)</strong></td>
-                <td>[${fiturA.huVec.slice(0,3).map(v => v.toFixed(2)).join(', ')}, ...]</td>
-                <td>[${fiturB.huVec.slice(0,3).map(v => v.toFixed(2)).join(', ')}, ...]</td>
-                <td><strong>${hasil.skorBentuk.toFixed(4)}</strong></td>
-            </tr>
-            <tr>
-                <td><strong>Geometri Kontur Utama</strong></td>
-                <td>Luas: ${fiturA.bentukInfo.luas}, Rasio: ${fiturA.bentukInfo.rasioAspek}</td>
-                <td>Luas: ${fiturB.bentukInfo.luas}, Rasio: ${fiturB.bentukInfo.rasioAspek}</td>
-                <td>-</td>
-            </tr>
-        `;
-    });
-</script>
-</body>
-</html>
+
+        src.delete(); rgb.delete
