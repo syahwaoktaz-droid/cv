@@ -3,148 +3,478 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Praktikum P9: Face Match & Deskriptor Objek</title>
+    <title>Praktikum P9: Face Match & Deskriptor Objek (Optimasi ROI)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        body { font-family: system-ui, -apple-system, sans-serif; background: #f4f6f9; color: #1e293b; margin: 0; padding: 20px; }
-        .container { max-width: 1000px; margin: auto; background: #fff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); }
-        h1 { font-size: 1.5rem; margin-bottom: 5px; color: #0f172a; }
-        p.subtitle { color: #64748b; margin-top: 0; margin-bottom: 20px; }
-        #status { padding: 10px 15px; background: #fef3c7; color: #92400e; border-radius: 6px; font-weight: 600; margin-bottom: 20px; }
-        #status.ready { background: #dcfce7; color: #166534; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-        .card { border: 1px solid #e2e8f0; padding: 15px; border-radius: 8px; text-align: center; background: #f8fafc; }
-        canvas { max-width: 100%; height: 220px; object-fit: contain; background: #0f172a; border-radius: 6px; margin-top: 10px; }
-        .controls { display: flex; flex-wrap: wrap; gap: 15px; align-items: center; background: #f1f5f9; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
-        button { background: #2563eb; color: white; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; cursor: pointer; }
-        button:disabled { background: #94a3b8; cursor: not-allowed; }
-        button:hover:not(:disabled) { background: #1d4ed8; }
-        .result-box { padding: 20px; border-radius: 8px; border: 2px solid #cbd5e1; display: none; }
-        .match { border-color: #22c55e; background: #f0fdf4; }
-        .no-match { border-color: #ef4444; background: #fef2f2; }
-        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 0.9rem; }
-        th, td { border: 1px solid #cbd5e1; padding: 8px 12px; text-align: left; }
-        th { background: #e2e8f0; }
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        }
+        canvas {
+            background-color: #0f172a;
+            display: block;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
     </style>
 </head>
-<body>
-<div class="container">
-    <h1>Implementasi Face Matching (Pertemuan 9)</h1>
-    <p class="subtitle">Ekstraksi Deskriptor Warna (Histogram RGB), Bentuk (Momen Hu), dan Verifikasi Ambang NCC</p>
-    
-    <div id="status">Memuat pustaka OpenCV.js... Harap tunggu.</div>
-    <div class="grid">
-        <div class="card">
-            <strong>Wajah Referensi (Objek A)</strong><br><br>
-            <input type="file" id="inputA" accept="image/*" disabled>
-            <canvas id="canvasA"></canvas>
+<body class="bg-slate-100 text-slate-800 min-h-screen p-3 sm:p-6">
+
+<div class="max-w-6xl mx-auto bg-white rounded-2xl shadow-lg border border-slate-200 overflow-hidden">
+    <!-- Header Aplikasi -->
+    <div class="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-5 sm:p-7">
+        <div class="flex flex-wrap items-center gap-2 mb-2">
+            <span class="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-blue-500/20 text-blue-200 border border-blue-400/30 rounded-full">
+                Computer Vision • Pertemuan 9
+            </span>
+            <span class="px-3 py-1 text-xs font-bold uppercase tracking-wider bg-emerald-500/20 text-emerald-200 border border-emerald-400/30 rounded-full">
+                + Optimasi ROI Wajah (Haar Cascade)
+            </span>
         </div>
-        <div class="card">
-            <strong>Wajah Uji (Objek B)</strong><br><br>
-            <input type="file" id="inputB" accept="image/*" disabled>
-            <canvas id="canvasB"></canvas>
+        <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight">
+            Sistem Verifikasi Wajah (Face Matching) &amp; Deskriptor Objek
+        </h1>
+        <p class="text-slate-300 text-xs sm:text-sm mt-1">
+            Ekstraksi Fitur Warna (Histogram RGB 192-dim), Fitur Bentuk (7 Momen Hu Invarian), dan Verifikasi Ambang NCC
+        </p>
+    </div>
+
+    <div class="p-4 sm:p-7 space-y-6">
+        <!-- Indikator Status OpenCV -->
+        <div id="statusBox" class="flex items-center gap-3 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium transition-all">
+            <span id="statusSpinner" class="inline-block w-4 h-4 border-2 border-amber-600 border-t-transparent rounded-full animate-spin shrink-0"></span>
+            <span id="statusText">Memuat pustaka OpenCV.js 4.8.0 &amp; Model Deteksi Wajah (Haar Cascade)... Harap tunggu.</span>
         </div>
-    </div>
-    <div class="controls">
-        <label for="threshold"><strong>Ambang Verifikasi (Threshold):</strong> <span id="threshVal">0.85</span></label>
-        <input type="range" id="threshold" min="0.50" max="0.99" step="0.01" value="0.85">
-        <button id="btnVerify" disabled>Jalankan Verifikasi Wajah</button>
-    </div>
-    <div id="resultBox" class="result-box">
-        <h2 id="decisionText" style="margin-top:0;"></h2>
-        <p id="scoreDetail"></p>
-        <table>
-            <thead>
-                <tr>
-                    <th>Deskriptor / Metrik</th>
-                    <th>Objek A (Referensi)</th>
-                    <th>Objek B (Uji)</th>
-                    <th>Skor Kemiripan (NCC)</th>
-                </tr>
-            </thead>
-            <tbody id="metricsBody"></tbody>
-        </table>
+
+        <!-- Kotak Pesan Notifikasi (Pengganti alert) -->
+        <div id="msgBox" class="hidden p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-sm font-medium"></div>
+
+        <!-- Grid Input Citra A & B -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <!-- Kartu Objek A -->
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">A</span>
+                            Wajah Referensi (Objek A)
+                        </h2>
+                        <span id="badgeA" class="text-xs font-medium text-slate-500 bg-slate-200/70 px-2.5 py-1 rounded-lg">Belum ada foto</span>
+                    </div>
+
+                    <label class="block w-full mb-4">
+                        <input type="file" id="inputA" accept="image/*" disabled
+                            class="block w-full text-xs sm:text-sm text-slate-600 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700 disabled:opacity-50 cursor-pointer bg-white border border-slate-300 rounded-xl p-1.5">
+                    </label>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="flex flex-col items-center">
+                        <div class="w-full aspect-square max-w-[210px] rounded-xl overflow-hidden border border-slate-300 shadow-inner">
+                            <canvas id="canvasA"></canvas>
+                        </div>
+                        <span class="text-xs font-medium text-slate-600 mt-2 text-center">Citra Input + Deteksi ROI</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <div class="w-full aspect-square max-w-[210px] rounded-xl overflow-hidden border border-slate-300 shadow-inner">
+                            <canvas id="roiA"></canvas>
+                        </div>
+                        <span class="text-xs font-medium text-slate-600 mt-2 text-center">Crop ROI Wajah (200×200)</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Kartu Objek B -->
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col justify-between">
+                <div>
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="font-bold text-slate-900 text-base flex items-center gap-2">
+                            <span class="w-6 h-6 rounded-full bg-indigo-600 text-white text-xs flex items-center justify-center font-bold">B</span>
+                            Wajah Uji (Objek B)
+                        </h2>
+                        <span id="badgeB" class="text-xs font-medium text-slate-500 bg-slate-200/70 px-2.5 py-1 rounded-lg">Belum ada foto</span>
+                    </div>
+
+                    <label class="block w-full mb-3">
+                        <input type="file" id="inputB" accept="image/*" disabled
+                            class="block w-full text-xs sm:text-sm text-slate-600 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs sm:file:text-sm file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-700 disabled:opacity-50 cursor-pointer bg-white border border-slate-300 rounded-xl p-1.5">
+                    </label>
+
+                    <!-- Alat Bantu Simulasi Skenario 2 (Rotasi & Zoom) -->
+                    <div class="bg-white border border-slate-200 rounded-xl p-2.5 mb-4">
+                        <div class="flex items-center justify-between mb-1.5">
+                            <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-500">Simulasi Skenario 2 (Invariansi)</span>
+                            <span id="transformInfo" class="text-[11px] font-mono text-indigo-600 font-semibold">Rotasi: 0° | Zoom: 1.00×</span>
+                        </div>
+                        <div class="grid grid-cols-4 gap-1.5">
+                            <button type="button" id="btnRotMin" disabled class="px-2 py-2 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40 transition">
+                                ↺ -15°
+                            </button>
+                            <button type="button" id="btnRotPlus" disabled class="px-2 py-2 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40 transition">
+                                ↻ +15°
+                            </button>
+                            <button type="button" id="btnZoomIn" disabled class="px-2 py-2 text-xs font-semibold rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40 transition">
+                                🔍 +25%
+                            </button>
+                            <button type="button" id="btnResetB" disabled class="px-2 py-2 text-xs font-semibold rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 disabled:opacity-40 transition">
+                                Reset
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="flex flex-col items-center">
+                        <div class="w-full aspect-square max-w-[210px] rounded-xl overflow-hidden border border-slate-300 shadow-inner">
+                            <canvas id="canvasB"></canvas>
+                        </div>
+                        <span class="text-xs font-medium text-slate-600 mt-2 text-center">Citra Input + Deteksi ROI</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <div class="w-full aspect-square max-w-[210px] rounded-xl overflow-hidden border border-slate-300 shadow-inner">
+                            <canvas id="roiB"></canvas>
+                        </div>
+                        <span class="text-xs font-medium text-slate-600 mt-2 text-center">Crop ROI Wajah (200×200)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Panel Kontrol Threshold & Eksekusi -->
+        <div class="bg-slate-100 border border-slate-200 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+            <div class="flex-1 space-y-1.5">
+                <div class="flex items-center justify-between">
+                    <label for="threshold" class="text-sm font-bold text-slate-800">
+                        Ambang Verifikasi (Threshold NCC)
+                    </label>
+                    <span id="threshVal" class="px-3 py-0.5 rounded-lg bg-blue-600 text-white font-mono text-sm font-bold">
+                        0.85
+                    </span>
+                </div>
+                <input type="range" id="threshold" min="0.50" max="0.99" step="0.01" value="0.85"
+                    class="w-full h-2.5 bg-slate-300 rounded-lg appearance-none cursor-pointer accent-blue-600">
+                <div class="flex justify-between text-[11px] text-slate-500 font-mono">
+                    <span>0.50 (Longgar)</span>
+                    <span>0.85 (Optimal)</span>
+                    <span>0.99 (Ketat)</span>
+                </div>
+            </div>
+
+            <button id="btnVerify" disabled
+                class="px-6 py-3.5 rounded-xl bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white font-bold text-sm sm:text-base shadow-md shadow-blue-600/20 disabled:bg-slate-400 disabled:shadow-none disabled:cursor-not-allowed transition-all shrink-0">
+                Jalankan Verifikasi Wajah
+            </button>
+        </div>
+
+        <!-- Hasil Verifikasi -->
+        <div id="resultBox" class="hidden rounded-2xl border-2 p-5 sm:p-6 transition-all">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-200/80">
+                <div>
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-500">Hasil Pencocokan Biometrik</span>
+                    <h2 id="decisionText" class="text-2xl sm:text-3xl font-extrabold mt-0.5"></h2>
+                </div>
+                <div class="bg-white/90 border border-slate-200 rounded-xl px-4 py-2.5 text-left sm:text-right">
+                    <div class="text-xs text-slate-500 font-medium">Skor Gabungan (0.6 Warna + 0.4 Bentuk)</div>
+                    <div id="scoreDetail" class="text-xl font-extrabold font-mono text-slate-900"></div>
+                </div>
+            </div>
+
+            <!-- Tabel Metrik Lengkap -->
+            <div class="overflow-x-auto mt-4">
+                <table class="w-full text-left border-collapse text-xs sm:text-sm bg-white rounded-xl overflow-hidden shadow-sm">
+                    <thead>
+                        <tr class="bg-slate-800 text-white">
+                            <th class="py-3 px-4 font-semibold">Deskriptor / Metrik</th>
+                            <th class="py-3 px-4 font-semibold">Objek A (Referensi)</th>
+                            <th class="py-3 px-4 font-semibold">Objek B (Uji)</th>
+                            <th class="py-3 px-4 font-semibold text-right">Skor Kemiripan (NCC)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="metricsBody" class="divide-y divide-slate-200"></tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 
-<script>
-    let imgLoadedA = false, imgLoadedB = false, cvReady = false;
+<!-- Memuat OpenCV.js 4.8.0 -->
+<script async src="https://docs.opencv.org/4.8.0/opencv.js" onload="onOpenCvReady();"></script>
 
-    function cekSiapVerifikasi() {
-        if (imgLoadedA && imgLoadedB && cvReady) {
+<script>
+    // State global aplikasi
+    let rawImgA = null;
+    let rawImgB = null;
+    let rotAngleB = 0;
+    let zoomScaleB = 1.0;
+    let faceCascade = null;
+    let cascadeReady = false;
+    let cvReady = false;
+
+    function showMessage(text) {
+        const box = document.getElementById('msgBox');
+        box.textContent = text;
+        box.classList.remove('hidden');
+        setTimeout(() => box.classList.add('hidden'), 5000);
+    }
+
+    // Inisialisasi ukuran canvas default agar rapi saat awal dibuka
+    function initDefaultCanvases() {
+        ['canvasA', 'roiA', 'canvasB', 'roiB'].forEach(id => {
+            const c = document.getElementById(id);
+            c.width = 250;
+            c.height = 250;
+            const ctx = c.getContext('2d');
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, 250, 250);
+            ctx.fillStyle = '#64748b';
+            ctx.font = '12px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('Menunggu citra...', 125, 130);
+        });
+    }
+    initDefaultCanvases();
+
+    // Memuat model Haar Cascade Frontal Face ke Virtual FS OpenCV.js
+    async function loadHaarCascade() {
+        try {
+            const url = 'https://raw.githubusercontent.com/opencv/opencv/4.8.0/data/haarcascades/haarcascade_frontalface_default.xml';
+            const response = await fetch(url);
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            const buffer = await response.arrayBuffer();
+            const data = new Uint8Array(buffer);
+            cv.FS_createDataFile('/', 'haarcascade_frontalface_default.xml', data, true, false, false);
+            faceCascade = new cv.CascadeClassifier();
+            faceCascade.load('haarcascade_frontalface_default.xml');
+            cascadeReady = true;
+        } catch (err) {
+            console.warn('Gagal memuat Haar Cascade, menggunakan fallback ROI kontur utama:', err);
+            cascadeReady = false;
+        }
+    }
+
+    // Callback saat OpenCV.js selesai diinisialisasi
+    function onOpenCvReady() {
+        cv['onRuntimeInitialized'] = async () => {
+            await loadHaarCascade();
+            cvReady = true;
+            const statusBox = document.getElementById('statusBox');
+            const statusSpinner = document.getElementById('statusSpinner');
+            const statusText = document.getElementById('statusText');
+
+            statusSpinner.classList.add('hidden');
+            statusBox.className = 'flex items-center gap-3 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm font-semibold transition-all';
+            statusText.textContent = cascadeReady
+                ? '✓ OpenCV.js 4.8.0 & Detektor ROI Wajah (Haar Cascade) Siap! Silakan unggah Wajah Referensi (A) dan Wajah Uji (B).'
+                : '✓ OpenCV.js 4.8.0 Siap (Mode Fallback Kontur ROI)! Silakan unggah kedua foto wajah.';
+
+            document.getElementById('inputA').disabled = false;
+            document.getElementById('inputB').disabled = false;
+        };
+    }
+
+    // Menggambar ulang citra A ke canvas input
+    function renderCanvasA() {
+        if (!rawImgA) return;
+        const canvas = document.getElementById('canvasA');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 250;
+        canvas.height = 250;
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 250, 250);
+        ctx.drawImage(rawImgA, 0, 0, 250, 250);
+    }
+
+    // Menggambar ulang citra B dengan transformasi rotasi & zoom (untuk pengujian Skenario 2)
+    function renderCanvasB() {
+        if (!rawImgB) return;
+        const canvas = document.getElementById('canvasB');
+        const ctx = canvas.getContext('2d');
+        canvas.width = 250;
+        canvas.height = 250;
+        ctx.save();
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(0, 0, 250, 250);
+        ctx.translate(125, 125);
+        ctx.rotate((rotAngleB * Math.PI) / 180);
+        ctx.scale(zoomScaleB, zoomScaleB);
+        ctx.drawImage(rawImgB, -125, -125, 250, 250);
+        ctx.restore();
+
+        document.getElementById('transformInfo').textContent =
+            `Rotasi: ${rotAngleB > 0 ? '+' + rotAngleB : rotAngleB}° | Zoom: ${zoomScaleB.toFixed(2)}×`;
+    }
+
+    function updateReadyState() {
+        if (rawImgA && rawImgB && cvReady) {
             document.getElementById('btnVerify').disabled = false;
         }
     }
 
-    function onOpenCvReady() {
-        if (typeof cv !== 'undefined') {
-            cv['onRuntimeInitialized'] = () => {
-                cvReady = true;
-                const status = document.getElementById('status');
-                status.textContent = 'OpenCV.js Siap! Silakan unggah kedua gambar wajah.';
-                status.classList.add('ready');
-                document.getElementById('inputA').disabled = false;
-                document.getElementById('inputB').disabled = false;
-                cekSiapVerifikasi();
-            };
-        }
-    }
-
-    document.getElementById('threshold').addEventListener('input', (e) => {
-        document.getElementById('threshVal').textContent = parseFloat(e.target.value).toFixed(2);
+    // Event listener unggah file A
+    document.getElementById('inputA').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const img = new Image();
+        img.onload = () => {
+            rawImgA = img;
+            renderCanvasA();
+            document.getElementById('badgeA').textContent = 'Foto dimuat';
+            document.getElementById('badgeA').className = 'text-xs font-semibold text-blue-700 bg-blue-100 px-2.5 py-1 rounded-lg';
+            updateReadyState();
+        };
+        img.onerror = () => showMessage('Gagal membaca file gambar Wajah Referensi (A).');
+        img.src = URL.createObjectURL(file);
     });
 
-    function loadImageToCanvas(inputElement, canvasId, flagSetter) {
-        inputElement.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const img = new Image();
-            img.onload = () => {
-                const canvas = document.getElementById(canvasId);
-                const ctx = canvas.getContext('2d');
-                canvas.width = 200;
-                canvas.height = 200;
-                ctx.drawImage(img, 0, 0, 200, 200);
-                flagSetter();
-                cekSiapVerifikasi();
-            };
-            img.src = URL.createObjectURL(file);
-        });
+    // Event listener unggah file B
+    document.getElementById('inputB').addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const img = new Image();
+        img.onload = () => {
+            rawImgB = img;
+            rotAngleB = 0;
+            zoomScaleB = 1.0;
+            renderCanvasB();
+            document.getElementById('badgeB').textContent = 'Foto dimuat';
+            document.getElementById('badgeB').className = 'text-xs font-semibold text-indigo-700 bg-indigo-100 px-2.5 py-1 rounded-lg';
+            ['btnRotMin', 'btnRotPlus', 'btnZoomIn', 'btnResetB'].forEach(id => {
+                document.getElementById(id).disabled = false;
+            });
+            updateReadyState();
+        };
+        img.onerror = () => showMessage('Gagal membaca file gambar Wajah Uji (B).');
+        img.src = URL.createObjectURL(file);
+    });
+
+    // Tombol cepat simulasi rotasi & zoom untuk pengujian Skenario 2
+    document.getElementById('btnRotMin').addEventListener('click', () => {
+        rotAngleB = (rotAngleB - 15) % 360;
+        renderCanvasB();
+        if (rawImgA && rawImgB) jalankanProsesVerifikasi();
+    });
+
+    document.getElementById('btnRotPlus').addEventListener('click', () => {
+        rotAngleB = (rotAngleB + 15) % 360;
+        renderCanvasB();
+        if (rawImgA && rawImgB) jalankanProsesVerifikasi();
+    });
+
+    document.getElementById('btnZoomIn').addEventListener('click', () => {
+        zoomScaleB = zoomScaleB >= 1.75 ? 1.0 : +(zoomScaleB + 0.25).toFixed(2);
+        renderCanvasB();
+        if (rawImgA && rawImgB) jalankanProsesVerifikasi();
+    });
+
+    document.getElementById('btnResetB').addEventListener('click', () => {
+        rotAngleB = 0;
+        zoomScaleB = 1.0;
+        renderCanvasB();
+        if (rawImgA && rawImgB) jalankanProsesVerifikasi();
+    });
+
+    // Update label slider threshold secara real-time & hitung ulang jika hasil sudah tampil
+    document.getElementById('threshold').addEventListener('input', (e) => {
+        document.getElementById('threshVal').textContent = parseFloat(e.target.value).toFixed(2);
+        if (!document.getElementById('resultBox').classList.contains('hidden')) {
+            jalankanProsesVerifikasi();
+        }
+    });
+
+    /**
+     * MODUL OPTIMASI: DETEKSI & CROP ROI WAJAH
+     * Menggunakan Haar Cascade Frontal Face dengan fallback kontur terbesar Otsu
+     */
+    function deteksiDanCropROI(srcCanvasId, roiCanvasId) {
+        let src = cv.imread(srcCanvasId);
+        let displayMat = src.clone();
+        let gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
+        cv.equalizeHist(gray, gray);
+
+        let roiRect = new cv.Rect(0, 0, src.cols, src.rows);
+        let metodeROI = 'Full Frame (Fallback)';
+
+        // 1. Deteksi Wajah via Haar Cascade
+        if (cascadeReady && faceCascade) {
+            let faces = new cv.RectVector();
+            let minSize = new cv.Size(40, 40);
+            faceCascade.detectMultiScale(gray, faces, 1.1, 3, 0, minSize);
+            if (faces.size() > 0) {
+                let maxArea = 0;
+                for (let i = 0; i < faces.size(); i++) {
+                    let f = faces.get(i);
+                    if (f.width * f.height > maxArea) {
+                        maxArea = f.width * f.height;
+                        roiRect = f;
+                    }
+                }
+                metodeROI = 'Haar Cascade Face ROI';
+            }
+            faces.delete();
+        }
+
+        // 2. Fallback: Deteksi Kontur Utama Otsu jika Haar Cascade tidak mendeteksi wajah (misal rotasi ekstrem)
+        if (metodeROI === 'Full Frame (Fallback)') {
+            let blur = new cv.Mat();
+            let bin = new cv.Mat();
+            let contours = new cv.MatVector();
+            let hierarchy = new cv.Mat();
+            cv.GaussianBlur(gray, blur, new cv.Size(5, 5), 0);
+            cv.threshold(blur, bin, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
+            cv.findContours(bin, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+            let maxArea = 0;
+            for (let i = 0; i < contours.size(); i++) {
+                let area = cv.contourArea(contours.get(i));
+                if (area > maxArea && area < (src.cols * src.rows * 0.9)) {
+                    maxArea = area;
+                    roiRect = cv.boundingRect(contours.get(i));
+                    metodeROI = 'Kontur ROI Utama (Otsu)';
+                }
+            }
+            blur.delete();
+            bin.delete();
+            contours.delete();
+            hierarchy.delete();
+        }
+
+        // Gambar kotak hijau ROI pada canvas input
+        let p1 = new cv.Point(roiRect.x, roiRect.y);
+        let p2 = new cv.Point(roiRect.x + roiRect.width, roiRect.y + roiRect.height);
+        cv.rectangle(displayMat, p1, p2, [34, 197, 94, 255], 3);
+        cv.imshow(srcCanvasId, displayMat);
+
+        // Crop ROI dan ubah ukuran ke standar 200x200 piksel
+        let cropped = src.roi(roiRect);
+        let resizedROI = new cv.Mat();
+        cv.resize(cropped, resizedROI, new cv.Size(200, 200), 0, 0, cv.INTER_AREA);
+        cv.imshow(roiCanvasId, resizedROI);
+
+        src.delete();
+        displayMat.delete();
+        gray.delete();
+        cropped.delete();
+        resizedROI.delete();
+
+        return metodeROI;
     }
 
-    loadImageToCanvas(document.getElementById('inputA'), 'canvasA', () => imgLoadedA = true);
-    loadImageToCanvas(document.getElementById('inputB'), 'canvasB', () => imgLoadedB = true);
-
-    // Perhitungan 7 Momen Hu langsung dari cv.moments (aman dari bug cv.HuMoments)
-    function hitungHuMoments(m) {
-        const n20 = m.nu20, n02 = m.nu02, n11 = m.nu11;
-        const n30 = m.nu30, n12 = m.nu12, n21 = m.nu21, n03 = m.nu03;
-
-        const h1 = n20 + n02;
-        const h2 = Math.pow(n20 - n02, 2) + 4 * Math.pow(n11, 2);
-        const h3 = Math.pow(n30 - 3 * n12, 2) + Math.pow(3 * n21 - n03, 2);
-        const h4 = Math.pow(n30 + n12, 2) + Math.pow(n21 + n03, 2);
-        const h5 = (n30 - 3 * n12) * (n30 + n12) * (Math.pow(n30 + n12, 2) - 3 * Math.pow(n21 + n03, 2)) +
-                   (3 * n21 - n03) * (n21 + n03) * (3 * Math.pow(n30 + n12, 2) - Math.pow(n21 + n03, 2));
-        const h6 = (n20 - n02) * (Math.pow(n30 + n12, 2) - Math.pow(n21 + n03, 2)) +
-                   4 * n11 * (n30 + n12) * (n21 + n03);
-        const h7 = (3 * n21 - n03) * (n30 + n12) * (Math.pow(n30 + n12, 2) - 3 * Math.pow(n21 + n03, 2)) -
-                   (n30 - 3 * n12) * (n21 + n03) * (3 * Math.pow(n30 + n12, 2) - Math.pow(n21 + n03, 2));
-
-        return [h1, h2, h3, h4, h5, h6, h7].map(val =>
-            val !== 0 ? -Math.sign(val) * Math.log10(Math.abs(val)) : 0
-        );
-    }
-
-    function ekstrakFiturObjek(canvasId) {
-        let src = cv.imread(canvasId);
+    /**
+     * MODUL EKSTRAKSI FITUR: HISTOGRAM RGB (192-DIM) & 7 MOMEN HU
+     */
+    function ekstrakFiturObjek(roiCanvasId, metodeROI) {
+        let src = cv.imread(roiCanvasId);
         let rgb = new cv.Mat();
         let gray = new cv.Mat();
-        
+
         cv.cvtColor(src, rgb, cv.COLOR_RGBA2RGB);
         cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
         cv.GaussianBlur(gray, gray, new cv.Size(5, 5), 0);
 
-        // 1. Histogram RGB (3 x 64 bins)
+        // 1. Deskriptor Warna: Histogram RGB (3 kanal x 64 bins = 192 dimensi) + Normalisasi L2
         let channels = new cv.MatVector();
         cv.split(rgb, channels);
         let histVec = [];
@@ -165,21 +495,25 @@
             chVec.delete();
         }
 
-        // 2. Kontur & Momen Hu
+        // 2. Deskriptor Bentuk: Otsu Thresholding + Kontur Terbesar + 7 Momen Hu (Log-transformed)
         let binary = new cv.Mat();
         cv.threshold(gray, binary, 0, 255, cv.THRESH_BINARY + cv.THRESH_OTSU);
         let contours = new cv.MatVector();
         let hierarchy = new cv.Mat();
         cv.findContours(binary, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
 
-        let maxArea = 0, maxIdx = -1;
+        let maxArea = 0;
+        let maxIdx = -1;
         for (let i = 0; i < contours.size(); i++) {
             let area = cv.contourArea(contours.get(i));
-            if (area > maxArea) { maxArea = area; maxIdx = i; }
+            if (area > maxArea) {
+                maxArea = area;
+                maxIdx = i;
+            }
         }
 
         let huVec = new Array(7).fill(0);
-        let bentukInfo = { luas: 0, keliling: 0, rasioAspek: 0 };
+        let bentukInfo = { luas: 0, keliling: 0, rasioAspek: 0, metodeROI };
 
         if (maxIdx !== -1) {
             let konturUtama = contours.get(maxIdx);
@@ -188,11 +522,175 @@
             bentukInfo = {
                 luas: maxArea.toFixed(0),
                 keliling: keliling.toFixed(1),
-                rasioAspek: (rect.width / rect.height).toFixed(2)
+                rasioAspek: rect.height > 0 ? (rect.width / rect.height).toFixed(2) : '0.00',
+                metodeROI
             };
 
             let momen = cv.moments(konturUtama, false);
-            huVec = hitungHuMoments(momen);
+            let rawHu = hitungHuMoments(momen);
+            for (let i = 0; i < 7; i++) {
+                let val = rawHu[i];
+                huVec[i] = val !== 0 ? -Math.sign(val) * Math.log10(Math.abs(val)) : 0;
+            }
         }
 
-        src.delete(); rgb.delete
+        src.delete();
+        rgb.delete();
+        gray.delete();
+        channels.delete();
+        mask.delete();
+        binary.delete();
+        contours.delete();
+        hierarchy.delete();
+
+        return { histVec, huVec, bentukInfo };
+    }
+
+    /**
+     * Menghitung 7 Momen Hu Invarian dari objek momen spasial OpenCV.
+     * Menggunakan cv.HuMoments jika tersedia di build OpenCV.js, atau formula analitik standar Hu (1962).
+     */
+    function hitungHuMoments(m) {
+        if (typeof cv.HuMoments === 'function') {
+            let hu = new cv.Mat();
+            cv.HuMoments(m, hu);
+            let arr = [];
+            for (let i = 0; i < 7; i++) {
+                arr.push(hu.doubleAt(i, 0));
+            }
+            hu.delete();
+            return arr;
+        }
+
+        // Fallback analitik: Momen terpusat ternormalisasi (nu_pq = mu_pq / m00^((p+q)/2 + 1))
+        if (!m || m.m00 === 0) return [0, 0, 0, 0, 0, 0, 0];
+        const invM00 = 1.0 / m.m00;
+        const invSqrtM00 = Math.sqrt(invM00);
+        const s2 = invM00 * invM00;
+        const s3 = s2 * invSqrtM00;
+
+        const n20 = m.mu20 * s2;
+        const n02 = m.mu02 * s2;
+        const n11 = m.mu11 * s2;
+        const n30 = m.mu30 * s3;
+        const n12 = m.mu12 * s3;
+        const n21 = m.mu21 * s3;
+        const n03 = m.mu03 * s3;
+
+        const t1 = n30 + n12;
+        const t2 = n21 + n03;
+        const t3 = n30 - 3 * n12;
+        const t4 = 3 * n21 - n03;
+
+        const h1 = n20 + n02;
+        const h2 = Math.pow(n20 - n02, 2) + 4 * Math.pow(n11, 2);
+        const h3 = Math.pow(t3, 2) + Math.pow(t4, 2);
+        const h4 = Math.pow(t1, 2) + Math.pow(t2, 2);
+        const h5 = t3 * t1 * (Math.pow(t1, 2) - 3 * Math.pow(t2, 2)) +
+                   t4 * t2 * (3 * Math.pow(t1, 2) - Math.pow(t2, 2));
+        const h6 = (n20 - n02) * (Math.pow(t1, 2) - Math.pow(t2, 2)) +
+                   4 * n11 * t1 * t2;
+        const h7 = t4 * t1 * (Math.pow(t1, 2) - 3 * Math.pow(t2, 2)) -
+                   t3 * t2 * (3 * Math.pow(t1, 2) - Math.pow(t2, 2));
+
+        return [h1, h2, h3, h4, h5, h6, h7];
+    }
+
+    // Normalized Cross-Correlation (NCC)
+    function ncc(vecA, vecB) {
+        let dot = 0, normA = 0, normB = 0;
+        for (let i = 0; i < vecA.length; i++) {
+            dot += vecA[i] * vecB[i];
+            normA += vecA[i] * vecA[i];
+            normB += vecB[i] * vecB[i];
+        }
+        if (normA === 0 || normB === 0) return 0;
+        return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+    }
+
+    // Komparasi skor & pengambilan keputusan berdasarkan ambang batas
+    function verifikasiWajah(fiturA, fiturB, ambang) {
+        const skorWarna = ncc(fiturA.histVec, fiturB.histVec);
+        const skorBentuk = ncc(fiturA.huVec, fiturB.huVec);
+        const skorGabungan = (0.6 * skorWarna) + (0.4 * skorBentuk);
+        const keputusan = skorGabungan >= ambang ? 'COCOK' : 'TIDAK COCOK';
+
+        return { skorWarna, skorBentuk, skorGabungan, keputusan };
+    }
+
+    function jalankanProsesVerifikasi() {
+        try {
+            // Render ulang citra bersih sebelum menggambar kotak hijau baru
+            renderCanvasA();
+            renderCanvasB();
+
+            const ambang = parseFloat(document.getElementById('threshold').value);
+
+            // Langkah 1: Deteksi & Crop ROI Wajah
+            const metodeA = deteksiDanCropROI('canvasA', 'roiA');
+            const metodeB = deteksiDanCropROI('canvasB', 'roiB');
+
+            // Langkah 2: Ekstraksi Fitur dari ROI 200x200
+            const fiturA = ekstrakFiturObjek('roiA', metodeA);
+            const fiturB = ekstrakFiturObjek('roiB', metodeB);
+
+            // Langkah 3: Verifikasi NCC
+            const hasil = verifikasiWajah(fiturA, fiturB, ambang);
+
+            // Tampilkan hasil ke UI
+            const box = document.getElementById('resultBox');
+            const decisionText = document.getElementById('decisionText');
+            const scoreDetail = document.getElementById('scoreDetail');
+            const tbody = document.getElementById('metricsBody');
+
+            box.classList.remove('hidden', 'border-emerald-500', 'bg-emerald-50/70', 'border-rose-500', 'bg-rose-50/70');
+            if (hasil.keputusan === 'COCOK') {
+                box.classList.add('border-emerald-500', 'bg-emerald-50/70');
+                decisionText.className = 'text-2xl sm:text-3xl font-extrabold mt-0.5 text-emerald-700';
+                decisionText.textContent = '✓ COCOK (IDENTITAS TERVERIFIKASI)';
+            } else {
+                box.classList.add('border-rose-500', 'bg-rose-50/70');
+                decisionText.className = 'text-2xl sm:text-3xl font-extrabold mt-0.5 text-rose-700';
+                decisionText.textContent = '✕ TIDAK COCOK (DITOLAK)';
+            }
+
+            scoreDetail.textContent = `${hasil.skorGabungan.toFixed(4)} (Ambang: ${ambang.toFixed(2)})`;
+
+            const formatHu = (arr) => arr.map((v, idx) => `h${idx + 1}:${v.toFixed(2)}`).join(', ');
+
+            tbody.innerHTML = `
+                <tr class="hover:bg-slate-50">
+                    <td class="py-3 px-4 font-semibold text-slate-800">Metode Deteksi ROI</td>
+                    <td class="py-3 px-4"><span class="px-2 py-0.5 rounded bg-blue-50 text-blue-700 font-medium">${fiturA.bentukInfo.metodeROI}</span></td>
+                    <td class="py-3 px-4"><span class="px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-medium">${fiturB.bentukInfo.metodeROI}</span></td>
+                    <td class="py-3 px-4 text-right font-mono text-slate-400">-</td>
+                </tr>
+                <tr class="hover:bg-slate-50">
+                    <td class="py-3 px-4 font-semibold text-slate-800">Histogram Warna ROI (RGB 192-dim)</td>
+                    <td class="py-3 px-4 text-slate-600">3 × 64 bins (Normalisasi L2)</td>
+                    <td class="py-3 px-4 text-slate-600">3 × 64 bins (Normalisasi L2)</td>
+                    <td class="py-3 px-4 text-right font-mono font-bold text-slate-900">${hasil.skorWarna.toFixed(4)}</td>
+                </tr>
+                <tr class="hover:bg-slate-50">
+                    <td class="py-3 px-4 font-semibold text-slate-800">7 Momen Hu Invarian (Log10)</td>
+                    <td class="py-3 px-4 font-mono text-[11px] text-slate-600">${formatHu(fiturA.huVec)}</td>
+                    <td class="py-3 px-4 font-mono text-[11px] text-slate-600">${formatHu(fiturB.huVec)}</td>
+                    <td class="py-3 px-4 text-right font-mono font-bold text-slate-900">${hasil.skorBentuk.toFixed(4)}</td>
+                </tr>
+                <tr class="hover:bg-slate-50">
+                    <td class="py-3 px-4 font-semibold text-slate-800">Geometri Kontur Utama</td>
+                    <td class="py-3 px-4 text-slate-600">Luas: <strong>${fiturA.bentukInfo.luas} px</strong> | Rasio: <strong>${fiturA.bentukInfo.rasioAspek}</strong></td>
+                    <td class="py-3 px-4 text-slate-600">Luas: <strong>${fiturB.bentukInfo.luas} px</strong> | Rasio: <strong>${fiturB.bentukInfo.rasioAspek}</strong></td>
+                    <td class="py-3 px-4 text-right font-mono text-slate-400">-</td>
+                </tr>
+            `;
+        } catch (err) {
+            console.error(err);
+            showMessage('Terjadi kesalahan saat memproses citra: ' + err.message);
+        }
+    }
+
+    document.getElementById('btnVerify').addEventListener('click', jalankanProsesVerifikasi);
+</script>
+</body>
+</html>
